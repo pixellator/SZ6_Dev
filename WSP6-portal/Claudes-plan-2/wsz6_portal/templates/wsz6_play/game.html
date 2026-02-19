@@ -220,15 +220,31 @@
     document.getElementById('state-display').textContent =
       msg.state_text || JSON.stringify(msg.state, null, 2);
 
-    const isMyTurn = (!gameOver && !msg.is_goal && msg.current_role_num === myRoleNum);
+    const isParallel = !!msg.is_parallel;
+    // In parallel mode any player whose role-scoped operators are still
+    // applicable can act; we don't gate on current_role_num.
+    const hasApplicableOps = currentOps.some(op => op.applicable);
+    const isMyTurn = !gameOver && !msg.is_goal && (
+      isParallel ? hasApplicableOps : msg.current_role_num === myRoleNum
+    );
+
     const turnBanner = document.getElementById('turn-banner');
     if (!gameOver && !msg.is_goal) {
-      turnBanner.innerHTML = isMyTurn
-        ? '<div class="my-turn-banner">Your turn!</div>'
-        : '<div class="wait-banner">Waiting for another player…</div>';
+      if (isParallel) {
+        turnBanner.innerHTML = hasApplicableOps
+          ? '<div class="my-turn-banner">Make your choice!</div>'
+          : '<div class="wait-banner">Choice submitted — waiting for other player…</div>';
+      } else {
+        turnBanner.innerHTML = isMyTurn
+          ? '<div class="my-turn-banner">Your turn!</div>'
+          : '<div class="wait-banner">Waiting for another player…</div>';
+      }
     }
 
-    document.getElementById('undo-btn').disabled = (msg.step === 0 || gameOver || msg.is_goal);
+    // Undo is always disabled during a parallel phase (and blocked server-side
+    // for any move that came from a parallel state).
+    document.getElementById('undo-btn').disabled =
+      (msg.step === 0 || gameOver || msg.is_goal || isParallel);
     setStatus('Step ' + msg.step + (msg.is_goal ? ' — Goal reached!' : ''));
     renderOps(msg.operators, isMyTurn);
 

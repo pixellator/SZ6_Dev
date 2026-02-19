@@ -62,9 +62,11 @@ class GameRunner:
         self.role_manager  = role_manager
         self.broadcast     = broadcast_func
         self.state_stack:  List[Any] = []
+        self.op_history:   List[Optional[int]] = [None]  # op_index used at each step; None = initial
         self.current_state = None
         self.step          = 0
         self.finished      = False
+        self._lock         = asyncio.Lock()  # serialises concurrent apply_operator calls
 
     # ------------------------------------------------------------------
     # Public API
@@ -86,81 +88,114 @@ class GameRunner:
     async def apply_operator(self, op_index: int, args: Optional[list] = None) -> None:
         """Apply the operator at ``op_index`` to the current state.
 
+        The entire operation runs inside an asyncio.Lock so that concurrent
+        applies from different players (e.g. during a parallel-input phase)
+        are serialised correctly — each one reads the up-to-date state that
+        the previous one produced.
+
         Raises:
             GameError: if the index is out of range, the precondition fails,
                        or the state-transition function raises an exception.
         """
-        if self.finished:
-            raise GameError("Game is already over.")
+        async with self._lock:
+            if self.finished:
+                raise GameError("Game is already over.")
 
-        operators = self.formulation.operators.operators
-        if not (0 <= op_index < len(operators)):
-            raise GameError(f"No operator with index {op_index}.")
+            operators = self.formulation.operators.operators
+            if not (0 <= op_index < len(operators)):
+                raise GameError(f"No operator with index {op_index}.")
 
-        op    = operators[op_index]
-        state = self.current_state
-        if not op.precond_func(state):
-            raise GameError("That operator is not applicable in the current state.")
+            op    = operators[op_index]
+            state = self.current_state          # read inside the lock for consistency
+            if not op.precond_func(state):
+                raise GameError("That operator is not applicable in the current state.")
 
-        # Use the operator's params list (not the supplied args) to decide
-        # the calling convention.  Textual_SOLUZION6 uses the same rule:
-        #   if op.params → state_xition_func(state, args)
-        #   else         → state_xition_func(state)
-        # Run in a thread so blocking I/O (e.g. an LLM HTTP call) never
-        # stalls the async event loop.
-        has_params = bool(getattr(op, 'params', None))
-        try:
-            if has_params:
-                new_state = await asyncio.to_thread(op.state_xition_func, state, args)
-            else:
-                new_state = await asyncio.to_thread(op.state_xition_func, state)
-        except Exception as exc:
-            raise GameError(f"Operator execution failed: {exc}") from exc
-
-        self.state_stack.append(new_state)
-        self.current_state = new_state
-        self.step += 1
-
-        # Transition message attached to the new state by the PFF.
-        jit = getattr(new_state, 'jit_transition', None)
-        if jit:
-            await self.broadcast({
-                'type':    'transition_msg',
-                'message': jit,
-                'step':    self.step,
-            })
-
-        # Check for goal.
-        try:
-            at_goal = new_state.is_goal()
-        except Exception:
-            at_goal = False
-
-        if at_goal:
-            self.finished = True
+            # Use the operator's params list (not the supplied args) to decide
+            # the calling convention.  Textual_SOLUZION6 uses the same rule:
+            #   if op.params → state_xition_func(state, args)
+            #   else         → state_xition_func(state)
+            # Run in a thread so blocking I/O (e.g. an LLM HTTP call) never
+            # stalls the async event loop.  The asyncio.Lock remains held while
+            # the thread runs; other applies will queue behind it.
+            has_params = bool(getattr(op, 'params', None))
             try:
-                goal_msg = new_state.goal_message()
+                if has_params:
+                    new_state = await asyncio.to_thread(op.state_xition_func, state, args)
+                else:
+                    new_state = await asyncio.to_thread(op.state_xition_func, state)
+            except Exception as exc:
+                raise GameError(f"Operator execution failed: {exc}") from exc
+
+            self.state_stack.append(new_state)
+            self.op_history.append(op_index)
+            self.current_state = new_state
+            self.step += 1
+
+            # Transition message attached to the new state by the PFF.
+            jit = getattr(new_state, 'jit_transition', None)
+            if jit:
+                await self.broadcast({
+                    'type':    'transition_msg',
+                    'message': jit,
+                    'step':    self.step,
+                })
+
+            # Check for goal.
+            try:
+                at_goal = new_state.is_goal()
             except Exception:
-                goal_msg = "Goal reached!"
-            await self._broadcast_state()
-            await self.broadcast({
-                'type':         'goal_reached',
-                'step':         self.step,
-                'goal_message': goal_msg,
-            })
-        else:
-            await self._broadcast_state()
+                at_goal = False
+
+            if at_goal:
+                self.finished = True
+                try:
+                    goal_msg = new_state.goal_message()
+                except Exception:
+                    goal_msg = "Goal reached!"
+                await self._broadcast_state()
+                await self.broadcast({
+                    'type':         'goal_reached',
+                    'step':         self.step,
+                    'goal_message': goal_msg,
+                })
+            else:
+                await self._broadcast_state()
 
     async def undo(self) -> None:
-        """Roll back one step by popping the state stack."""
-        if self.finished:
-            raise GameError("Cannot undo after the game has ended.")
-        if len(self.state_stack) <= 1:
-            raise GameError("Already at the initial state; cannot undo further.")
-        self.state_stack.pop()
-        self.current_state = self.state_stack[-1]
-        self.step += 1
-        await self._broadcast_state()
+        """Roll back one step by popping the state stack.
+
+        Undo is blocked when the state we would revert *to* had
+        ``parallel == True``, unless the operator that produced the current
+        state explicitly sets ``allow_undo = True``.  This prevents players
+        from backing out of a secret commitment after seeing another player's
+        hidden choice.
+        """
+        async with self._lock:
+            if self.finished:
+                raise GameError("Cannot undo after the game has ended.")
+            if len(self.state_stack) <= 1:
+                raise GameError("Already at the initial state; cannot undo further.")
+
+            # Parallel-phase undo guard.
+            prev_state = self.state_stack[-2]
+            if getattr(prev_state, 'parallel', False):
+                # Default: block.  Override: operator carries allow_undo = True.
+                last_op_index = self.op_history[-1]
+                allow = False
+                if last_op_index is not None:
+                    ops = self.formulation.operators.operators
+                    if 0 <= last_op_index < len(ops):
+                        allow = getattr(ops[last_op_index], 'allow_undo', False)
+                if not allow:
+                    raise GameError(
+                        "Undo is not allowed after a move made during a parallel input phase."
+                    )
+
+            self.state_stack.pop()
+            self.op_history.pop()
+            self.current_state = self.state_stack[-1]
+            self.step += 1
+            await self._broadcast_state()
 
     # ------------------------------------------------------------------
     # Introspection helpers (also called directly by GameConsumer)
@@ -202,6 +237,7 @@ class GameRunner:
             'state':            serialize_state(state),
             'state_text':       str(state),
             'is_goal':          at_goal,
+            'is_parallel':      getattr(state, 'parallel', False),
             'operators':        ops_info,
             'current_role_num': getattr(state, 'current_role_num', 0),
         }

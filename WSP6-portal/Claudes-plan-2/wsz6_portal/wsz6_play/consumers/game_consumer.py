@@ -109,6 +109,7 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
             'state':            serialize_state(state),
             'state_text':       str(state),
             'is_goal':          at_goal,
+            'is_parallel':      getattr(state, 'parallel', False),
             'operators':        _filter_ops_for_role(ops, self.role_num),
             'current_role_num': getattr(state, 'current_role_num', 0),
             'your_role_num':    self.role_num,
@@ -159,11 +160,15 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({'type': 'error', 'message': 'Game engine not ready.'})
             return
 
-        # Role-turn check.
+        # Role-turn check — skipped during parallel-input phases so that all
+        # players whose role-scoped operators are applicable can submit
+        # simultaneously.  The lock inside apply_operator serialises the
+        # actual state transitions; preconditions ensure idempotency.
         state = runner.current_state
-        if getattr(state, 'current_role_num', 0) != self.role_num:
-            await self.send_json({'type': 'error', 'message': "It is not your turn."})
-            return
+        if not getattr(state, 'parallel', False):
+            if getattr(state, 'current_role_num', 0) != self.role_num:
+                await self.send_json({'type': 'error', 'message': "It is not your turn."})
+                return
 
         try:
             op_index = int(content.get('op_index', -1))
