@@ -103,7 +103,11 @@
     {% endif %}
     <span class="spacer"></span>
     <span class="user-info">{{ user.username }} ({{ user.get_user_type_display }})</span>
-    <a href="{% url 'accounts:logout' %}">Log out</a>
+    <form method="post" action="{% url 'accounts:logout' %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" style="background:none; border:none; cursor:pointer;
+              color:#cde; font-size:.9rem; padding:0;">Log out</button>
+    </form>
   {% else %}
     <span class="spacer"></span>
     <a href="{% url 'accounts:login' %}">Log in</a>
