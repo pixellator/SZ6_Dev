@@ -38,6 +38,9 @@ INTERNAL_API_KEY = config('INTERNAL_API_KEY', default='dev-internal-key-change-m
 # ---------------------------------------------------------------------------
 
 INSTALLED_APPS = [
+    # daphne MUST be first so it overrides Django's runserver with an ASGI version.
+    'daphne',
+
     # Django built-ins
     'django.contrib.admin',
     'django.contrib.auth',
