@@ -26,15 +26,53 @@
   #paused-banner  { padding:.8rem 1rem; background:#fff3cd; color:#856404;
                     border-radius:4px; font-size:1rem; font-weight:600; display:none; }
 
-  /* ── Param-input form ── */
+  /* ── Inline param form (int / float / str params) ── */
   #param-form     { margin-top:.6rem; padding:.8rem; background:#f0f4f8;
                     border:1px solid #d0d9e4; border-radius:4px; }
   #param-form label { display:block; font-size:.85rem; font-weight:600; margin-bottom:.2rem; }
-  #param-form input, #param-form textarea {
-    width:100%; padding:.3rem .5rem; border:1px solid #ccc;
-    border-radius:4px; font-size:.9rem; box-sizing:border-box; }
-  #param-form textarea { font-family:monospace; resize:vertical; }
+  #param-form input { width:100%; padding:.3rem .5rem; border:1px solid #ccc;
+                      border-radius:4px; font-size:.9rem; box-sizing:border-box; }
   .param-hint     { font-size:.75rem; color:#666; margin-top:.15rem; display:block; }
+
+  /* ── File-edit modal overlay ── */
+  #file-edit-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.55);
+    display: none;                     /* flex when open */
+    align-items: center; justify-content: center;
+  }
+  #file-edit-modal {
+    background: #fff; border-radius: 8px;
+    width: min(860px, 92vw); height: min(82vh, 720px);
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 40px rgba(0,0,0,.3);
+    animation: feSlideIn .15s ease;
+  }
+  @keyframes feSlideIn {
+    from { opacity:0; transform:translateY(-12px); }
+    to   { opacity:1; transform:translateY(0); }
+  }
+  #file-edit-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 1.2rem; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;
+  }
+  #file-edit-header h2 { margin:0; font-size:1rem; color:#1a3a5c; }
+  #file-edit-wordcount { font-size:.82rem; color:#888; white-space:nowrap; }
+  #file-edit-area {
+    flex: 1; padding: 1.2rem 1.4rem;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.05rem; line-height: 1.75;
+    border: none; resize: none; outline: none;
+    color: #2c2c2c; background: #fefefe;
+    overflow-y: auto;
+  }
+  #file-edit-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .65rem 1.2rem; border-top: 1px solid #e0e0e0;
+    background: #f8f9fa; border-radius: 0 0 8px 8px; flex-shrink: 0;
+  }
+  #file-edit-footer .hint { font-size:.8rem; color:#999; }
+  #file-edit-footer .actions { display:flex; gap:.5rem; }
 
   @media (max-width:700px) { .game-wrap { grid-template-columns: 1fr; } }
 </style>
@@ -62,7 +100,7 @@
     <h2>Operators</h2>
     <ul id="ops-list"><li style="color:#aaa; font-style:italic; font-size:.9rem;">Waiting…</li></ul>
 
-    <!-- Param-input form: shown when a parameterized operator is clicked -->
+    <!-- Inline param form (int / float / str params) -->
     <div id="param-form" style="display:none;">
       <strong id="param-op-name" style="display:block; margin-bottom:.5rem; font-size:.9rem;"></strong>
       <div id="param-fields"></div>
@@ -84,6 +122,32 @@
   </div>
 
 </div>
+
+<!-- ── File-edit modal overlay ────────────────────────────────────────── -->
+<!-- Clicking the backdrop (outside the modal) cancels the edit. -->
+<div id="file-edit-overlay" onclick="if(event.target===this) cancelFileEdit();">
+  <div id="file-edit-modal">
+
+    <div id="file-edit-header">
+      <h2 id="file-edit-title">Edit</h2>
+      <span id="file-edit-wordcount">0 words</span>
+    </div>
+
+    <textarea id="file-edit-area" spellcheck="true"
+              placeholder="Start writing here…"></textarea>
+
+    <div id="file-edit-footer">
+      <span class="hint">Ctrl+Enter to save</span>
+      <div class="actions">
+        <button class="btn btn-sm" style="background:#e8ecf0;"
+                onclick="cancelFileEdit()">Cancel</button>
+        <button class="btn btn-success btn-sm"
+                onclick="saveFileEdit()">Save &amp; Apply</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -98,6 +162,22 @@
   let gameOver      = false;
   let currentOps    = [];    // full operator list from the last state_update
   let pendingOpIndex = null; // op awaiting param input from the user
+
+  // ── File-edit modal setup (event listeners on static elements) ────────
+
+  const feArea  = document.getElementById('file-edit-area');
+  const feCount = document.getElementById('file-edit-wordcount');
+
+  feArea.addEventListener('input', _updateWordCount);
+  feArea.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); saveFileEdit(); }
+  });
+
+  function _updateWordCount() {
+    const text  = feArea.value.trim();
+    const count = text ? text.split(/\s+/).length : 0;
+    feCount.textContent = count + (count === 1 ? ' word' : ' words');
+  }
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -117,29 +197,29 @@
   // ── Message dispatch ─────────────────────────────────────────────
 
   function dispatch(msg) {
-    if      (msg.type === 'state_update')     onStateUpdate(msg);
-    else if (msg.type === 'transition_msg')   onTransition(msg);
-    else if (msg.type === 'goal_reached')     onGoalReached(msg);
-    else if (msg.type === 'game_paused')      onGamePaused(msg);
+    if      (msg.type === 'state_update')      onStateUpdate(msg);
+    else if (msg.type === 'transition_msg')    onTransition(msg);
+    else if (msg.type === 'goal_reached')      onGoalReached(msg);
+    else if (msg.type === 'game_paused')       onGamePaused(msg);
     else if (msg.type === 'new_session_ready') onNewSessionReady(msg);
-    else if (msg.type === 'help')             showHelp(msg.message);
-    else if (msg.type === 'error')            setStatus('⚠ ' + msg.message);
+    else if (msg.type === 'help')              showHelp(msg.message);
+    else if (msg.type === 'error')             setStatus('⚠ ' + msg.message);
   }
 
   function onStateUpdate(msg) {
     myRoleNum  = msg.your_role_num;
     currentOps = msg.operators || [];
 
-    // If the param form was open for a previous move, dismiss it now that
-    // a new state arrived (e.g. another player moved first).
+    // Dismiss any open input UI if a new state arrives externally.
     if (pendingOpIndex !== null) {
       hideParamForm();
+      closeFileEditModal();
       pendingOpIndex = null;
     }
 
-    document.getElementById('state-display').textContent = msg.state_text || JSON.stringify(msg.state, null, 2);
+    document.getElementById('state-display').textContent =
+      msg.state_text || JSON.stringify(msg.state, null, 2);
 
-    // Don't show "Your turn!" when the game is already over.
     const isMyTurn = (!gameOver && !msg.is_goal && msg.current_role_num === myRoleNum);
     const turnBanner = document.getElementById('turn-banner');
     if (!gameOver && !msg.is_goal) {
@@ -148,9 +228,7 @@
         : '<div class="wait-banner">Waiting for another player…</div>';
     }
 
-    // Undo is only meaningful when there are moves to undo.
     document.getElementById('undo-btn').disabled = (msg.step === 0 || gameOver || msg.is_goal);
-
     setStatus('Step ' + msg.step + (msg.is_goal ? ' — Goal reached!' : ''));
     renderOps(msg.operators, isMyTurn);
 
@@ -165,7 +243,7 @@
     const el = document.getElementById('transition-msg');
     el.textContent = msg.message;
     el.style.display = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 4000);
+    setTimeout(() => { el.style.display = 'none'; }, 6000);
   }
 
   function onGoalReached(msg) {
@@ -185,7 +263,7 @@
   }
 
   function onGamePaused(msg) {
-    gameOver = true;   // stop further interaction
+    gameOver = true;
     renderOps([], false);
     document.getElementById('undo-btn').disabled = true;
     const pauseBtn = document.getElementById('pause-btn');
@@ -193,7 +271,8 @@
     document.getElementById('turn-banner').innerHTML = '';
     const lobbyUrl = '/play/join/' + SESSION_KEY + '/';
     const banner = document.getElementById('paused-banner');
-    banner.innerHTML = '⏸ Game paused at step ' + msg.step + '. <a href="' + lobbyUrl + '">Go to lobby to resume.</a>';
+    banner.innerHTML = '⏸ Game paused at step ' + msg.step +
+      '. <a href="' + lobbyUrl + '">Go to lobby to resume.</a>';
     banner.style.display = 'block';
     setStatus('Game paused (checkpoint saved).');
   }
@@ -203,21 +282,26 @@
   function renderOps(ops, isMyTurn) {
     const list = document.getElementById('ops-list');
     if (!ops || ops.length === 0) {
-      list.innerHTML = '<li style="color:#aaa; font-style:italic; font-size:.9rem;">No operators available</li>';
+      list.innerHTML =
+        '<li style="color:#aaa; font-style:italic; font-size:.9rem;">No operators available</li>';
       return;
     }
     let html = '';
     for (const op of ops) {
       const canApply = isMyTurn && op.applicable;
-      // Add a subtle ▸ marker on operators that need parameter input.
-      const paramHint = (op.params && op.params.length > 0)
-        ? ' <span style="font-size:.7rem;opacity:.6;" title="Requires input">▸</span>'
-        : '';
+      const hasParams = op.params && op.params.length > 0;
+      const isFileEdit = hasParams && op.params.some(p => p.type === 'file_edit');
+      // ✎ for file-edit ops, ▸ for other parameterized ops
+      const hint = isFileEdit
+        ? ' <span style="font-size:.75rem;opacity:.65;" title="Opens text editor">✎</span>'
+        : hasParams
+          ? ' <span style="font-size:.7rem;opacity:.6;" title="Requires input">▸</span>'
+          : '';
       html += `<li>
         <button class="${canApply ? 'applicable' : ''}"
                 onclick="applyOp(${op.index})"
                 ${canApply ? '' : 'disabled'}>
-          ${esc(op.name)}${paramHint}
+          ${esc(op.name)}${hint}
         </button>
       </li>`;
     }
@@ -236,7 +320,60 @@
     el.style.display = 'block';
   }
 
-  // ── Parameterized operator form ───────────────────────────────────
+  // ── User action: apply operator ───────────────────────────────────
+
+  window.applyOp = function(opIndex) {
+    const op = currentOps.find(o => o.index === opIndex);
+    if (!op || !op.params || op.params.length === 0) {
+      send({ type: 'apply_operator', op_index: opIndex });
+      return;
+    }
+    pendingOpIndex = opIndex;
+    // Route to file-edit modal or inline param form.
+    if (op.params.some(p => p.type === 'file_edit')) {
+      openFileEditModal(op);
+    } else {
+      showParamForm(op.name, op.params);
+    }
+  };
+
+  // ── File-edit modal ───────────────────────────────────────────────
+
+  function openFileEditModal(op) {
+    const feParam = op.params.find(p => p.type === 'file_edit');
+    const initial = (feParam && feParam.initial_text) || '';
+
+    document.getElementById('file-edit-title').textContent = op.name;
+    feArea.value = initial;
+    _updateWordCount();
+
+    const overlay = document.getElementById('file-edit-overlay');
+    overlay.style.display = 'flex';
+    feArea.focus();
+    feArea.setSelectionRange(0, 0);
+    feArea.scrollTop = 0;
+  }
+
+  function closeFileEditModal() {
+    document.getElementById('file-edit-overlay').style.display = 'none';
+    feArea.value = '';
+    _updateWordCount();
+  }
+
+  window.saveFileEdit = function() {
+    const content = feArea.value;
+    const idx     = pendingOpIndex;
+    closeFileEditModal();
+    pendingOpIndex = null;
+    send({ type: 'apply_operator', op_index: idx, args: [content] });
+  };
+
+  window.cancelFileEdit = function() {
+    closeFileEditModal();
+    pendingOpIndex = null;
+  };
+
+  // ── Inline param form (int / float / str) ─────────────────────────
 
   function showParamForm(opName, params) {
     document.getElementById('param-op-name').textContent = opName;
@@ -247,7 +384,6 @@
       const label = p.name || ('Parameter ' + (i + 1));
       html += '<div style="margin-bottom:.6rem;">';
       html += '<label>' + esc(label) + '</label>';
-
       if (p.type === 'int') {
         const minA = (p.min !== undefined) ? ' min="' + p.min + '"' : '';
         const maxA = (p.max !== undefined) ? ' max="' + p.max + '"' : '';
@@ -262,20 +398,13 @@
         if (p.min !== undefined && p.max !== undefined) {
           html += '<span class="param-hint">Range: ' + p.min + ' – ' + p.max + '</span>';
         }
-      } else if (p.type === 'file_edit') {
-        // In the web UI, file_edit becomes a large textarea.
-        const initial = p.initial_text || '';
-        html += '<textarea id="param-' + i + '" rows="10">' + esc(initial) + '</textarea>';
-        html += '<span class="param-hint">Edit your text above, then click Apply.</span>';
       } else {
-        // 'str' or any other type → plain text input
         html += '<input id="param-' + i + '" type="text">';
       }
       html += '</div>';
     }
     fields.innerHTML = html;
     document.getElementById('param-form').style.display = 'block';
-    // Auto-focus the first field for keyboard convenience.
     const first = document.getElementById('param-0');
     if (first) { first.focus(); if (first.select) first.select(); }
   }
@@ -284,19 +413,6 @@
     document.getElementById('param-form').style.display = 'none';
     document.getElementById('param-fields').innerHTML = '';
   }
-
-  // ── User actions ─────────────────────────────────────────────────
-
-  window.applyOp = function(opIndex) {
-    const op = currentOps.find(o => o.index === opIndex);
-    if (op && op.params && op.params.length > 0) {
-      // Parameterized operator: show the input form before sending.
-      pendingOpIndex = opIndex;
-      showParamForm(op.name, op.params);
-    } else {
-      send({ type: 'apply_operator', op_index: opIndex });
-    }
-  };
 
   window.submitParams = function() {
     if (pendingOpIndex === null) return;
@@ -308,18 +424,18 @@
       const p  = params[i];
       const el = document.getElementById('param-' + i);
       if (!el) { args.push(null); continue; }
-      el.style.borderColor = '';  // reset any previous error highlight
+      el.style.borderColor = '';
       if (p.type === 'int') {
         const v = parseInt(el.value, 10);
-        if (isNaN(v))                              { _paramErr(el); return; }
-        if (p.min !== undefined && v < p.min)      { _paramErr(el); return; }
-        if (p.max !== undefined && v > p.max)      { _paramErr(el); return; }
+        if (isNaN(v))                         { _paramErr(el); return; }
+        if (p.min !== undefined && v < p.min) { _paramErr(el); return; }
+        if (p.max !== undefined && v > p.max) { _paramErr(el); return; }
         args.push(v);
       } else if (p.type === 'float') {
         const v = parseFloat(el.value);
-        if (isNaN(v))                              { _paramErr(el); return; }
-        if (p.min !== undefined && v < p.min)      { _paramErr(el); return; }
-        if (p.max !== undefined && v > p.max)      { _paramErr(el); return; }
+        if (isNaN(v))                         { _paramErr(el); return; }
+        if (p.min !== undefined && v < p.min) { _paramErr(el); return; }
+        if (p.max !== undefined && v > p.max) { _paramErr(el); return; }
         args.push(v);
       } else {
         args.push(el.value);
@@ -331,23 +447,18 @@
     send({ type: 'apply_operator', op_index: idx, args: args });
   };
 
-  function _paramErr(el) {
-    el.style.borderColor = '#dc3545';
-    el.focus();
-  }
+  function _paramErr(el) { el.style.borderColor = '#dc3545'; el.focus(); }
 
   window.cancelParams = function() {
     hideParamForm();
     pendingOpIndex = null;
   };
 
-  window.sendUndo = function() {
-    send({ type: 'request_undo' });
-  };
+  // ── Other controls ────────────────────────────────────────────────
 
-  window.sendHelp = function() {
-    send({ type: 'request_help' });
-  };
+  window.sendUndo = function() { send({ type: 'request_undo' }); };
+
+  window.sendHelp = function() { send({ type: 'request_help' }); };
 
   window.sendPause = function() {
     if (confirm('Pause the game? All players will be disconnected from the game page.')) {
