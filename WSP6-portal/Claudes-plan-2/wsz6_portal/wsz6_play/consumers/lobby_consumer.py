@@ -1,24 +1,336 @@
 """
 wsz6_play/consumers/lobby_consumer.py
 
-Lobby WebSocket consumer — stub for Phase 2.
-Handles session creation, player join, role assignment, and game start.
+Lobby WebSocket consumer.
+
+Handles everything before the game starts:
+  - Players connect and register a display name.
+  - Session owner assigns players to roles.
+  - Session owner clicks "Start Game" once min_players is met.
+  - On start, the PFF is loaded, GDM dirs are created, a PlayThrough DB
+    record is written, and a GameRunner is initialised.
+
+WebSocket URL:  ws://<host>/ws/lobby/<session_key>/
+
+── Messages from client ──────────────────────────────────────────────────
+  {type: "join",        name: "<player name>"}
+  {type: "assign_role", token: "<hex>", role_num: <int>}   (owner only)
+  {type: "start_game"}                                       (owner only)
+
+── Messages to client ────────────────────────────────────────────────────
+  {type: "connected",     player_token: "…", is_owner: bool}
+  {type: "lobby_state",   game_name, game_slug, status,
+                          roles: {roles:[…], unassigned:[…]},
+                          min_players_to_start: int}
+  {type: "game_starting", game_page_url: "/play/game/<key>/<token>/"}
+  {type: "error",         message: "…"}
 """
 
-from channels.generic.websocket import AsyncJsonWebsocketConsumer
+import asyncio
+import logging
+import uuid
 
+from channels.db import database_sync_to_async
+from channels.generic.websocket import AsyncJsonWebsocketConsumer
+from channels.layers import get_channel_layer
+from django.conf import settings
+
+from wsz6_play import session_store
+from wsz6_play.engine.game_runner import GameRunner
+from wsz6_play.engine.pff_loader import PFFLoadError, load_formulation
+from wsz6_play.engine.role_manager import RoleManager
+from wsz6_play.persistence.gdm_writer import (
+    GDMWriter,
+    ensure_gdm_dirs,
+    make_gdm_playthrough_path,
+)
+from wsz6_play.persistence.session_sync import push_session_status
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _default_roles_spec():
+    """Minimal single-role spec used when the PFF has none."""
+    class _Role:
+        def __init__(self, name, description=''):
+            self.name        = name
+            self.description = description
+    class _Spec:
+        def __init__(self):
+            self.roles                 = [_Role('Player', 'The sole player/solver.')]
+            self.min_players_to_start  = 1
+    return _Spec()
+
+
+@database_sync_to_async
+def _create_playthrough_record(session_key, game_slug, playthrough_id, log_path):
+    """Write a PlayThrough row to the GDM database."""
+    try:
+        from wsz6_play.models import PlayThrough
+        PlayThrough.objects.using('gdm').create(
+            playthrough_id=playthrough_id,
+            session_key=session_key,
+            game_slug=game_slug,
+            log_path=log_path,
+        )
+    except Exception as exc:
+        logger.warning("Could not create PlayThrough record: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Consumer
+# ---------------------------------------------------------------------------
 
 class LobbyConsumer(AsyncJsonWebsocketConsumer):
 
+    # ----------------------------------------------------------------
+    # Connection lifecycle
+    # ----------------------------------------------------------------
+
     async def connect(self):
         self.session_key = self.scope['url_route']['kwargs']['session_key']
-        # TODO (Phase 2): validate session, add to group, send lobby state.
+        session = session_store.get_session(self.session_key)
+        if session is None:
+            await self.close(code=4404)
+            return
+
+        # Lazy-load the formulation on the very first connection so we
+        # have roles_spec to build the RoleManager.
+        if session.get('role_manager') is None:
+            await self._init_role_manager(session)
+            session = session_store.get_session(self.session_key)
+            if session is None:
+                await self.close(code=4404)
+                return
+
+        if session['status'] not in ('lobby',):
+            await self.accept()
+            await self.send_json({'type': 'error', 'message': 'Game has already started.'})
+            return
+
+        user   = self.scope.get('user')
+        is_auth = user and getattr(user, 'is_authenticated', False)
+
+        rm      = session['role_manager']
+        name    = user.username if is_auth else f"Guest-{uuid.uuid4().hex[:6]}"
+        user_id = user.id if is_auth else None
+
+        self.player_token = rm.add_player(name, user_id=user_id)
+        self.group_name   = f"lobby_{self.session_key}"
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
-        await self.send_json({'type': 'lobby_stub', 'session_key': self.session_key})
+
+        is_owner = is_auth and (user_id == session.get('owner_id'))
+        await self.send_json({
+            'type':         'connected',
+            'player_token': self.player_token,
+            'is_owner':     is_owner,
+        })
+        await self._broadcast_lobby_state(session)
 
     async def disconnect(self, close_code):
-        pass
+        if not hasattr(self, 'player_token'):
+            return
+        session = session_store.get_session(self.session_key)
+        if session and session.get('role_manager'):
+            session['role_manager'].remove_player(self.player_token)
+            if session['status'] == 'lobby':
+                await self._broadcast_lobby_state(session)
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    # ----------------------------------------------------------------
+    # Message dispatch
+    # ----------------------------------------------------------------
 
     async def receive_json(self, content):
-        # TODO (Phase 2): handle join, role_select, start_game messages.
-        await self.send_json({'type': 'error', 'message': 'Lobby not yet implemented.'})
+        session = session_store.get_session(self.session_key)
+        if session is None:
+            await self.send_json({'type': 'error', 'message': 'Session not found.'})
+            return
+
+        msg_type = content.get('type')
+        if   msg_type == 'join':        await self._handle_join(content, session)
+        elif msg_type == 'assign_role': await self._handle_assign_role(content, session)
+        elif msg_type == 'start_game':  await self._handle_start_game(session)
+        else:
+            await self.send_json({
+                'type': 'error', 'message': f'Unknown message type: {msg_type!r}'
+            })
+
+    # ----------------------------------------------------------------
+    # Message handlers
+    # ----------------------------------------------------------------
+
+    async def _handle_join(self, content, session):
+        name = str(content.get('name', '')).strip()
+        if name:
+            rm     = session['role_manager']
+            player = rm.get_player(self.player_token)
+            if player:
+                player.name = name
+        await self._broadcast_lobby_state(session)
+
+    async def _handle_assign_role(self, content, session):
+        if not self._is_owner(session):
+            await self.send_json({
+                'type': 'error', 'message': 'Only the session owner can assign roles.'
+            })
+            return
+        token    = content.get('token', '')
+        role_num = content.get('role_num')
+        if role_num is None:
+            await self.send_json({'type': 'error', 'message': 'role_num is required.'})
+            return
+        try:
+            role_num = int(role_num)
+        except (TypeError, ValueError):
+            await self.send_json({'type': 'error', 'message': 'role_num must be an integer.'})
+            return
+        rm  = session['role_manager']
+        err = rm.assign_role(token, role_num)
+        if err:
+            await self.send_json({'type': 'error', 'message': err})
+        else:
+            await self._broadcast_lobby_state(session)
+
+    async def _handle_start_game(self, session):
+        if not self._is_owner(session):
+            await self.send_json({
+                'type': 'error', 'message': 'Only the session owner can start the game.'
+            })
+            return
+
+        rm  = session['role_manager']
+        err = rm.validate_for_start()
+        if err:
+            await self.send_json({'type': 'error', 'message': err})
+            return
+
+        # Load a fresh formulation (unique module name per play-through).
+        try:
+            formulation = await asyncio.to_thread(
+                load_formulation, session['game_slug'], settings.GAMES_REPO_ROOT
+            )
+        except PFFLoadError as exc:
+            await self.send_json({'type': 'error', 'message': f'Failed to load game: {exc}'})
+            return
+
+        # Set up GDM directories and writer.
+        playthrough_id = uuid.uuid4().hex
+        session_dir    = session['session_dir']
+        pt_dir         = make_gdm_playthrough_path(session_dir, playthrough_id)
+        await asyncio.to_thread(ensure_gdm_dirs, pt_dir)
+        gdm_writer = GDMWriter(pt_dir)
+
+        # Create PlayThrough DB record.
+        await _create_playthrough_record(
+            session_key    = self.session_key,
+            game_slug      = session['game_slug'],
+            playthrough_id = playthrough_id,
+            log_path       = gdm_writer.log_path,
+        )
+
+        # Build the broadcast function for GameRunner.
+        session_key   = self.session_key
+        game_group    = f"game_{session_key}"
+        channel_layer = get_channel_layer()
+
+        async def broadcast(payload: dict):
+            await channel_layer.group_send(game_group, payload)
+
+        runner = GameRunner(formulation, rm, broadcast)
+
+        # Persist to session store before starting the runner.
+        session_store.update_session(self.session_key, {
+            'status':         'in_progress',
+            'game_runner':    runner,
+            'gdm_writer':     gdm_writer,
+            'playthrough_id': playthrough_id,
+        })
+
+        # Log game_started.
+        await gdm_writer.write_event(
+            'game_started',
+            role_assignments=rm.to_dict(),
+            session_key=self.session_key,
+        )
+
+        # Update UARD GameSession status → in_progress.
+        await push_session_status(self.session_key, 'in_progress')
+
+        # Initialise game state (broadcasts initial state_update to the game group;
+        # players haven't joined that group yet but the state is ready when they do).
+        await runner.start()
+
+        # Notify each lobby participant of their game page URL.
+        assigned = rm.get_assigned_players()
+        player_game_urls = {
+            p.token: f'/play/game/{self.session_key}/{p.token}/'
+            for p in assigned
+        }
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                'type':             'game_starting_event',
+                'player_game_urls': player_game_urls,
+                'session_key':      self.session_key,
+            }
+        )
+
+    # ----------------------------------------------------------------
+    # Channel layer message handlers (called by group_send)
+    # ----------------------------------------------------------------
+
+    async def lobby_state(self, event):
+        await self.send_json(event)
+
+    async def game_starting_event(self, event):
+        my_url = event['player_game_urls'].get(self.player_token)
+        await self.send_json({
+            'type':          'game_starting',
+            'game_page_url': my_url or f'/play/join/{self.session_key}/',
+            'session_key':   event['session_key'],
+        })
+
+    # ----------------------------------------------------------------
+    # Helpers
+    # ----------------------------------------------------------------
+
+    def _is_owner(self, session) -> bool:
+        user = self.scope.get('user')
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
+        return user.id == session.get('owner_id')
+
+    async def _broadcast_lobby_state(self, session):
+        rm = session['role_manager']
+        await self.channel_layer.group_send(
+            f"lobby_{self.session_key}",
+            {
+                'type':                  'lobby_state',
+                'game_name':             session['game_name'],
+                'game_slug':             session['game_slug'],
+                'status':                session['status'],
+                'roles':                 rm.to_dict(),
+                'min_players_to_start':  getattr(rm.roles_spec, 'min_players_to_start', 1),
+            }
+        )
+
+    async def _init_role_manager(self, session):
+        """Load the PFF and create the RoleManager (once per session)."""
+        try:
+            formulation = await asyncio.to_thread(
+                load_formulation, session['game_slug'], settings.GAMES_REPO_ROOT
+            )
+            roles_spec = getattr(formulation, 'roles_spec', None) or _default_roles_spec()
+            rm = RoleManager(roles_spec)
+        except PFFLoadError as exc:
+            logger.error("LobbyConsumer: failed to load PFF for %s: %s", session['game_slug'], exc)
+            rm = RoleManager(_default_roles_spec())
+        session_store.update_session(self.session_key, {'role_manager': rm})

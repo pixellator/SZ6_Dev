@@ -46,6 +46,18 @@
   </div>
 
   <div class="card">
+    <h2>Start a Session</h2>
+    {% if user.can_start_sessions %}
+    <form method="post" action="{% url 'games_catalog:start_session' game.slug %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary">▶ New Session</button>
+    </form>
+    {% else %}
+    <p style="color:#888; font-size:.9rem;">You do not have permission to start sessions.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <h2>Recent Sessions</h2>
     <table>
       <tr><th>Owner</th><th>Status</th><th>Date</th></tr>

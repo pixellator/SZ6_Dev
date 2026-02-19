@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Game – WSZ6 Portal{% endblock %}
+
+{% block extra_head %}
+<style>
+  .game-wrap      { display: grid; grid-template-columns: 3fr 1fr; gap: 1rem; align-items: start; }
+  #state-display  { font-family: monospace; white-space: pre; background:#1e1e2e; color:#cdd6f4;
+                    padding:1.2rem; border-radius:6px; font-size:1rem; line-height:1.5; min-height:8rem; }
+  #ops-list       { list-style: none; }
+  #ops-list li    { margin-bottom:.4rem; }
+  #ops-list li button { width:100%; text-align:left; padding:.4rem .7rem; border-radius:4px;
+                        border:none; cursor:pointer; font-size:.9rem; background:#f0f4f8; }
+  #ops-list li button.applicable { background:#d4edda; color:#155724; }
+  #ops-list li button.applicable:hover { background:#c3e6cb; }
+  #ops-list li button:disabled { color:#aaa; cursor:not-allowed; }
+  .my-turn-banner { background:#d4edda; color:#155724; padding:.5rem .8rem;
+                    border-radius:4px; margin-bottom:.6rem; font-weight:600; }
+  .wait-banner    { background:#fff3cd; color:#856404; padding:.5rem .8rem;
+                    border-radius:4px; margin-bottom:.6rem; }
+  #status-bar     { padding:.4rem .8rem; background:#e8f4fd; border-radius:4px;
+                    font-size:.85rem; color:#0c5460; margin-bottom:.6rem; }
+  #transition-msg { padding:.5rem .8rem; background:#f3e5f5; color:#4a148c;
+                    border-radius:4px; margin-bottom:.6rem; display:none; }
+  #goal-banner    { padding:.8rem 1rem; background:#d4edda; color:#155724;
+                    border-radius:4px; font-size:1.1rem; font-weight:700; display:none; }
+  @media (max-width:700px) { .game-wrap { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 id="game-title">Game</h1>
+<div id="status-bar">Connecting…</div>
+<div id="transition-msg"></div>
+<div id="goal-banner"></div>
+
+<div class="game-wrap">
+
+  <!-- Left: game state display -->
+  <div>
+    <div class="card" style="padding:0; overflow:hidden;">
+      <pre id="state-display">Loading…</pre>
+    </div>
+    <div id="turn-banner" style="margin-top:.5rem;"></div>
+  </div>
+
+  <!-- Right: operator list + undo -->
+  <div class="card">
+    <h2>Operators</h2>
+    <ul id="ops-list"><li style="color:#aaa; font-style:italic; font-size:.9rem;">Waiting…</li></ul>
+    <hr style="margin:1rem 0; border-color:#e0e0e0;">
+    <button class="btn btn-warning btn-sm" onclick="sendUndo()" id="undo-btn">↩ Undo</button>
+    <button class="btn btn-primary btn-sm" onclick="sendHelp()" style="margin-left:.4rem;">? Help</button>
+    <div id="help-msg" style="display:none; margin-top:.6rem; font-size:.85rem; color:#555;"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  const SESSION_KEY = "{{ session_key }}";
+  const ROLE_TOKEN  = "{{ role_token }}";
+  const WS_URL      = "{{ ws_url }}";
+
+  let ws         = null;
+  let myRoleNum  = -1;
+  let gameOver   = false;
+
+  // ── Connection ──────────────────────────────────────────────────
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + WS_URL);
+    ws.onopen    = () => setStatus('Connected.');
+    ws.onmessage = (evt) => dispatch(JSON.parse(evt.data));
+    ws.onerror   = ()  => setStatus('WebSocket error — try refreshing.');
+    ws.onclose   = (e) => setStatus('Disconnected (code ' + e.code + ').');
+  }
+
+  function send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  // ── Message dispatch ─────────────────────────────────────────────
+
+  function dispatch(msg) {
+    if      (msg.type === 'state_update')   onStateUpdate(msg);
+    else if (msg.type === 'transition_msg') onTransition(msg);
+    else if (msg.type === 'goal_reached')   onGoalReached(msg);
+    else if (msg.type === 'help')           showHelp(msg.message);
+    else if (msg.type === 'error')          setStatus('⚠ ' + msg.message);
+  }
+
+  function onStateUpdate(msg) {
+    myRoleNum = msg.your_role_num;
+    document.getElementById('state-display').textContent = msg.state_text || JSON.stringify(msg.state, null, 2);
+
+    const isMyTurn = (!gameOver && msg.current_role_num === myRoleNum);
+    const turnBanner = document.getElementById('turn-banner');
+    turnBanner.innerHTML = isMyTurn
+      ? '<div class="my-turn-banner">Your turn!</div>'
+      : '<div class="wait-banner">Waiting for another player…</div>';
+
+    setStatus('Step ' + msg.step + (msg.is_goal ? ' — Goal reached!' : ''));
+    renderOps(msg.operators, isMyTurn);
+
+    if (msg.is_goal && !gameOver) {
+      gameOver = true;
+      showGoal('Goal reached at step ' + msg.step + '!');
+    }
+  }
+
+  function onTransition(msg) {
+    const el = document.getElementById('transition-msg');
+    el.textContent = msg.message;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+  }
+
+  function onGoalReached(msg) {
+    gameOver = true;
+    showGoal(msg.goal_message || 'Goal reached!');
+    renderOps([], false);
+    document.getElementById('undo-btn').disabled = true;
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────
+
+  function renderOps(ops, isMyTurn) {
+    const list = document.getElementById('ops-list');
+    if (!ops || ops.length === 0) {
+      list.innerHTML = '<li style="color:#aaa; font-style:italic; font-size:.9rem;">No operators available</li>';
+      return;
+    }
+    let html = '';
+    for (const op of ops) {
+      const canApply = isMyTurn && op.applicable;
+      html += `<li>
+        <button class="${canApply ? 'applicable' : ''}"
+                onclick="applyOp(${op.index})"
+                ${canApply ? '' : 'disabled'}>
+          ${esc(op.name)}
+        </button>
+      </li>`;
+    }
+    list.innerHTML = html;
+  }
+
+  function showGoal(msg) {
+    const el = document.getElementById('goal-banner');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function showHelp(msg) {
+    const el = document.getElementById('help-msg');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // ── User actions ─────────────────────────────────────────────────
+
+  window.applyOp = function(opIndex) {
+    send({ type: 'apply_operator', op_index: opIndex });
+  };
+
+  window.sendUndo = function() {
+    send({ type: 'request_undo' });
+  };
+
+  window.sendHelp = function() {
+    send({ type: 'request_help' });
+  };
+
+  function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }
+
+  function esc(str) {
+    const d = document.createElement('div'); d.textContent = String(str); return d.innerHTML;
+  }
+
+  connect();
+})();
+</script>
+{% endblock %}

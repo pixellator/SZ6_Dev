@@ -22,6 +22,12 @@ GAMES_REPO_ROOT = config(
     default=str(BASE_DIR.parent.parent.parent / 'games_repo')
 )
 
+# Root of the GDM file system (session logs, checkpoints, artifacts).
+GDM_ROOT = config(
+    'GDM_ROOT',
+    default=str(BASE_DIR.parent.parent.parent / 'gdm')
+)
+
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------

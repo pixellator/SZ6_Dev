@@ -4,7 +4,8 @@ from . import views
 app_name = 'games_catalog'
 
 urlpatterns = [
-    path('',              views.game_list,    name='list'),
-    path('install/',      views.game_install, name='install'),
-    path('<slug:slug>/',  views.game_detail,  name='detail'),
+    path('',                             views.game_list,      name='list'),
+    path('install/',                     views.game_install,   name='install'),
+    path('<slug:slug>/',                 views.game_detail,    name='detail'),
+    path('<slug:slug>/start-session/',   views.start_session,  name='start_session'),
 ]

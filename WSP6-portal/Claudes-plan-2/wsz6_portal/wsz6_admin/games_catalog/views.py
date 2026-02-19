@@ -6,6 +6,7 @@ Game catalogue: list, detail, installation, and status editing.
 
 import json
 import logging
+import urllib.request
 
 from django.conf import settings
 from django.contrib import messages
@@ -138,6 +139,76 @@ def game_install(request):
         form = GameInstallForm()
 
     return render(request, 'games_catalog/install.html', {'form': form})
+
+
+# ---------------------------------------------------------------------------
+# Session creation (session owners)
+# ---------------------------------------------------------------------------
+
+@login_required
+def start_session(request, slug):
+    """POST handler: create a new game session and redirect the owner to the lobby.
+
+    Phase-2 implementation: registers the session directly in the in-process
+    session_store (same Django process as wsz6_play) to avoid an HTTP self-call
+    that could deadlock with a single-threaded WSGI server.
+    """
+    if request.method != 'POST':
+        return redirect('games_catalog:detail', slug=slug)
+
+    game = get_object_or_404(Game, slug=slug)
+    user = request.user
+
+    if not user.can_start_sessions():
+        messages.error(request, 'You do not have permission to start sessions.')
+        return redirect('games_catalog:detail', slug=slug)
+
+    import os
+    import uuid as _uuid
+    from datetime import datetime, timezone as _tz
+
+    from django.conf import settings as _s
+
+    from wsz6_play import session_store
+    from wsz6_play.persistence.gdm_writer import make_gdm_session_path
+    from wsz6_admin.sessions_log.models import GameSession
+
+    session_key = str(_uuid.uuid4())
+
+    # Create the GDM session directory.
+    gdm_root    = getattr(_s, 'GDM_ROOT', str(_s.BASE_DIR.parent.parent / 'gdm'))
+    session_dir = make_gdm_session_path(gdm_root, game.slug, session_key)
+    try:
+        os.makedirs(session_dir, exist_ok=True)
+    except OSError as exc:
+        logger.warning('start_session: could not create GDM dir: %s', exc)
+
+    # Register in wsz6_play's session store.
+    session_store.create_session(session_key, {
+        'session_key':    session_key,
+        'game_slug':      game.slug,
+        'game_name':      game.name,
+        'owner_id':       user.id,
+        'pff_path':       os.path.join(getattr(_s, 'GAMES_REPO_ROOT', ''), game.slug),
+        'status':         'lobby',
+        'role_manager':   None,
+        'game_runner':    None,
+        'gdm_writer':     None,
+        'playthrough_id': None,
+        'session_dir':    session_dir,
+        'started_at':     datetime.now(_tz.utc).isoformat(),
+    })
+
+    # Create the UARD GameSession record.
+    GameSession.objects.create(
+        session_key=_uuid.UUID(session_key),
+        owner=user,
+        game=game,
+        status=GameSession.STATUS_OPEN,
+    )
+
+    logger.info('Session %s started for game %s by %s', session_key, game.slug, user)
+    return redirect('wsz6_play:join', session_key=session_key)
 
 
 def _notify_play_game_installed(game: Game):

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Session Not Found – WSZ6 Portal{% endblock %}
+{% block content %}
+<div style="max-width:480px; margin:3rem auto;">
+  <div class="card">
+    <h1>Session Not Found</h1>
+    <p style="color:#555; margin-top:.5rem;">
+      No session with key <code>{{ session_key }}</code> was found.
+      It may have expired or not yet been created.
+    </p>
+    <a href="{% url 'games_catalog:list' %}" class="btn btn-primary" style="margin-top:1rem;">
+      Back to Games
+    </a>
+  </div>
+</div>
+{% endblock %}
