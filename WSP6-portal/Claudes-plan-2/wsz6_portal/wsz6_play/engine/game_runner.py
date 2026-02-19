@@ -97,10 +97,15 @@ class GameRunner:
         if not op.precond_func(state):
             raise GameError("That operator is not applicable in the current state.")
 
+        # Use the operator's params list (not the supplied args) to decide
+        # the calling convention.  Textual_SOLUZION6 uses the same rule:
+        #   if op.params → state_xition_func(state, args)
+        #   else         → state_xition_func(state)
+        has_params = bool(getattr(op, 'params', None))
         try:
             new_state = (
                 op.state_xition_func(state, args)
-                if args
+                if has_params
                 else op.state_xition_func(state)
             )
         except Exception as exc:

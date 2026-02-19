@@ -25,6 +25,17 @@
                     border-radius:4px; font-size:1.1rem; font-weight:700; display:none; }
   #paused-banner  { padding:.8rem 1rem; background:#fff3cd; color:#856404;
                     border-radius:4px; font-size:1rem; font-weight:600; display:none; }
+
+  /* ── Param-input form ── */
+  #param-form     { margin-top:.6rem; padding:.8rem; background:#f0f4f8;
+                    border:1px solid #d0d9e4; border-radius:4px; }
+  #param-form label { display:block; font-size:.85rem; font-weight:600; margin-bottom:.2rem; }
+  #param-form input, #param-form textarea {
+    width:100%; padding:.3rem .5rem; border:1px solid #ccc;
+    border-radius:4px; font-size:.9rem; box-sizing:border-box; }
+  #param-form textarea { font-family:monospace; resize:vertical; }
+  .param-hint     { font-size:.75rem; color:#666; margin-top:.15rem; display:block; }
+
   @media (max-width:700px) { .game-wrap { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -50,6 +61,18 @@
   <div class="card">
     <h2>Operators</h2>
     <ul id="ops-list"><li style="color:#aaa; font-style:italic; font-size:.9rem;">Waiting…</li></ul>
+
+    <!-- Param-input form: shown when a parameterized operator is clicked -->
+    <div id="param-form" style="display:none;">
+      <strong id="param-op-name" style="display:block; margin-bottom:.5rem; font-size:.9rem;"></strong>
+      <div id="param-fields"></div>
+      <div style="margin-top:.6rem;">
+        <button class="btn btn-primary btn-sm" onclick="submitParams()">Apply</button>
+        <button class="btn btn-sm" style="margin-left:.4rem; background:#e8ecf0;"
+                onclick="cancelParams()">Cancel</button>
+      </div>
+    </div>
+
     <hr style="margin:1rem 0; border-color:#e0e0e0;">
     <button class="btn btn-warning btn-sm" onclick="sendUndo()" id="undo-btn" disabled>↩ Undo</button>
     <button class="btn btn-primary btn-sm" onclick="sendHelp()" style="margin-left:.4rem;">? Help</button>
@@ -70,9 +93,11 @@
   const ROLE_TOKEN  = "{{ role_token }}";
   const WS_URL      = "{{ ws_url }}";
 
-  let ws         = null;
-  let myRoleNum  = -1;
-  let gameOver   = false;
+  let ws            = null;
+  let myRoleNum     = -1;
+  let gameOver      = false;
+  let currentOps    = [];    // full operator list from the last state_update
+  let pendingOpIndex = null; // op awaiting param input from the user
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -102,7 +127,16 @@
   }
 
   function onStateUpdate(msg) {
-    myRoleNum = msg.your_role_num;
+    myRoleNum  = msg.your_role_num;
+    currentOps = msg.operators || [];
+
+    // If the param form was open for a previous move, dismiss it now that
+    // a new state arrived (e.g. another player moved first).
+    if (pendingOpIndex !== null) {
+      hideParamForm();
+      pendingOpIndex = null;
+    }
+
     document.getElementById('state-display').textContent = msg.state_text || JSON.stringify(msg.state, null, 2);
 
     // Don't show "Your turn!" when the game is already over.
@@ -175,11 +209,15 @@
     let html = '';
     for (const op of ops) {
       const canApply = isMyTurn && op.applicable;
+      // Add a subtle ▸ marker on operators that need parameter input.
+      const paramHint = (op.params && op.params.length > 0)
+        ? ' <span style="font-size:.7rem;opacity:.6;" title="Requires input">▸</span>'
+        : '';
       html += `<li>
         <button class="${canApply ? 'applicable' : ''}"
                 onclick="applyOp(${op.index})"
                 ${canApply ? '' : 'disabled'}>
-          ${esc(op.name)}
+          ${esc(op.name)}${paramHint}
         </button>
       </li>`;
     }
@@ -198,10 +236,109 @@
     el.style.display = 'block';
   }
 
+  // ── Parameterized operator form ───────────────────────────────────
+
+  function showParamForm(opName, params) {
+    document.getElementById('param-op-name').textContent = opName;
+    const fields = document.getElementById('param-fields');
+    let html = '';
+    for (let i = 0; i < params.length; i++) {
+      const p     = params[i];
+      const label = p.name || ('Parameter ' + (i + 1));
+      html += '<div style="margin-bottom:.6rem;">';
+      html += '<label>' + esc(label) + '</label>';
+
+      if (p.type === 'int') {
+        const minA = (p.min !== undefined) ? ' min="' + p.min + '"' : '';
+        const maxA = (p.max !== undefined) ? ' max="' + p.max + '"' : '';
+        html += '<input id="param-' + i + '" type="number" step="1"' + minA + maxA + '>';
+        if (p.min !== undefined && p.max !== undefined) {
+          html += '<span class="param-hint">Range: ' + p.min + ' – ' + p.max + '</span>';
+        }
+      } else if (p.type === 'float') {
+        const minA = (p.min !== undefined) ? ' min="' + p.min + '"' : '';
+        const maxA = (p.max !== undefined) ? ' max="' + p.max + '"' : '';
+        html += '<input id="param-' + i + '" type="number" step="any"' + minA + maxA + '>';
+        if (p.min !== undefined && p.max !== undefined) {
+          html += '<span class="param-hint">Range: ' + p.min + ' – ' + p.max + '</span>';
+        }
+      } else if (p.type === 'file_edit') {
+        // In the web UI, file_edit becomes a large textarea.
+        const initial = p.initial_text || '';
+        html += '<textarea id="param-' + i + '" rows="10">' + esc(initial) + '</textarea>';
+        html += '<span class="param-hint">Edit your text above, then click Apply.</span>';
+      } else {
+        // 'str' or any other type → plain text input
+        html += '<input id="param-' + i + '" type="text">';
+      }
+      html += '</div>';
+    }
+    fields.innerHTML = html;
+    document.getElementById('param-form').style.display = 'block';
+    // Auto-focus the first field for keyboard convenience.
+    const first = document.getElementById('param-0');
+    if (first) { first.focus(); if (first.select) first.select(); }
+  }
+
+  function hideParamForm() {
+    document.getElementById('param-form').style.display = 'none';
+    document.getElementById('param-fields').innerHTML = '';
+  }
+
   // ── User actions ─────────────────────────────────────────────────
 
   window.applyOp = function(opIndex) {
-    send({ type: 'apply_operator', op_index: opIndex });
+    const op = currentOps.find(o => o.index === opIndex);
+    if (op && op.params && op.params.length > 0) {
+      // Parameterized operator: show the input form before sending.
+      pendingOpIndex = opIndex;
+      showParamForm(op.name, op.params);
+    } else {
+      send({ type: 'apply_operator', op_index: opIndex });
+    }
+  };
+
+  window.submitParams = function() {
+    if (pendingOpIndex === null) return;
+    const op = currentOps.find(o => o.index === pendingOpIndex);
+    if (!op) return;
+    const params = op.params || [];
+    const args = [];
+    for (let i = 0; i < params.length; i++) {
+      const p  = params[i];
+      const el = document.getElementById('param-' + i);
+      if (!el) { args.push(null); continue; }
+      el.style.borderColor = '';  // reset any previous error highlight
+      if (p.type === 'int') {
+        const v = parseInt(el.value, 10);
+        if (isNaN(v))                              { _paramErr(el); return; }
+        if (p.min !== undefined && v < p.min)      { _paramErr(el); return; }
+        if (p.max !== undefined && v > p.max)      { _paramErr(el); return; }
+        args.push(v);
+      } else if (p.type === 'float') {
+        const v = parseFloat(el.value);
+        if (isNaN(v))                              { _paramErr(el); return; }
+        if (p.min !== undefined && v < p.min)      { _paramErr(el); return; }
+        if (p.max !== undefined && v > p.max)      { _paramErr(el); return; }
+        args.push(v);
+      } else {
+        args.push(el.value);
+      }
+    }
+    const idx = pendingOpIndex;
+    hideParamForm();
+    pendingOpIndex = null;
+    send({ type: 'apply_operator', op_index: idx, args: args });
+  };
+
+  function _paramErr(el) {
+    el.style.borderColor = '#dc3545';
+    el.focus();
+  }
+
+  window.cancelParams = function() {
+    hideParamForm();
+    pendingOpIndex = null;
   };
 
   window.sendUndo = function() {
