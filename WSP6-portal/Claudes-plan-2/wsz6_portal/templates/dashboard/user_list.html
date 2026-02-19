@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Users – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<h1>Users</h1>
+<div class="card">
+  <form class="search-bar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search by name or email…">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if q %}<a href="?" class="btn">Clear</a>{% endif %}
+  </form>
+  <table>
+    <tr><th>Username</th><th>Name</th><th>Email</th><th>Type</th><th>Access</th><th>Sessions</th><th>Active</th><th></th></tr>
+    {% for u in users %}
+    <tr>
+      <td><a href="{% url 'dashboard:user_detail' u.pk %}">{{ u.username }}</a></td>
+      <td>{{ u.get_full_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.get_user_type_display }}</td>
+      <td>{{ u.get_game_access_level_display }}</td>
+      <td>{{ u.session_count }}</td>
+      <td>{% if u.is_active %}✓{% else %}—{% endif %}</td>
+      <td><a href="{% url 'dashboard:user_detail' u.pk %}" class="btn btn-sm btn-primary">Edit</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8">No users found.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

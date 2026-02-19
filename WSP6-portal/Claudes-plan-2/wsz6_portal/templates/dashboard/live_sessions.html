@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Live Sessions – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<h1>Live Sessions</h1>
+
+<div class="card">
+  <h2>Active ({{ active|length }})</h2>
+  <table>
+    <tr><th>Session key</th><th>Game</th><th>Owner</th><th>Status</th><th>Started</th></tr>
+    {% for s in active %}
+    <tr>
+      <td style="font-size:.8rem;font-family:monospace;">{{ s.session_key }}</td>
+      <td>{{ s.game.name }}</td>
+      <td>{{ s.owner.username }}</td>
+      <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+      <td>{{ s.started_at|date:"H:i:s" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No active sessions.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Ended recently</h2>
+  <table>
+    <tr><th>Game</th><th>Owner</th><th>Status</th><th>Ended</th></tr>
+    {% for s in recent_ended %}
+    <tr style="color:#888;">
+      <td>{{ s.game.name }}</td>
+      <td>{{ s.owner.username }}</td>
+      <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+      <td>{{ s.ended_at|date:"H:i:s" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4">None in the last hour.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

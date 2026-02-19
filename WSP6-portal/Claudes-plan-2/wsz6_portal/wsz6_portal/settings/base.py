@@ -58,8 +58,17 @@ INSTALLED_APPS = [
     'wsz6_admin.games_catalog',
     'wsz6_admin.sessions_log',
     'wsz6_admin.research',
+    'wsz6_admin.dashboard',
     'wsz6_play',
 ]
+
+# Auth redirects
+LOGIN_URL          = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/dashboard/'
+LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+# Max size for uploaded game zip files (bytes): 50 MB
+GAME_ZIP_MAX_SIZE = 50 * 1024 * 1024
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -91,6 +100,9 @@ TEMPLATES = [
 
 # ASGI application (Daphne uses this entry point)
 ASGI_APPLICATION = 'wsz6_portal.asgi.application'
+
+# Database router
+DATABASE_ROUTERS = ['wsz6_portal.db_router.GDMRouter']
 
 # ---------------------------------------------------------------------------
 # Custom user model

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Install Game – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<h1>Install New Game</h1>
+<div class="card" style="max-width:640px;">
+  <p style="color:#555; margin-bottom:1rem;">
+    Upload a ZIP archive containing the SOLUZION6 problem formulation file
+    and any supporting resources. The PFF will be sandbox-validated before
+    the game is added to the catalogue.
+  </p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% for field in form %}
+      <p>
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="helptext">{{ field.help_text }}</div>{% endif %}
+        {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </p>
+    {% endfor %}
+    <div style="display:flex; gap:.7rem; margin-top:.5rem; flex-wrap:wrap;">
+      <button type="submit" class="btn btn-success">Install Game</button>
+      <button type="submit" name="debug" value="1" class="btn btn-warning">Install &amp; Start in Debug Mode</button>
+      <a href="{% url 'games_catalog:list' %}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

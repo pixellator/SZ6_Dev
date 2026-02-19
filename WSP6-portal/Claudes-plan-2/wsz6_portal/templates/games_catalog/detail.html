@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ game.name }} – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:center; gap:1rem; margin-bottom:.8rem; flex-wrap:wrap;">
+  <h1 style="margin:0;">{{ game.name }}</h1>
+  <span class="badge badge-{{ game.status }}">{{ game.get_status_display }}</span>
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1rem; align-items:start;">
+
+  <div>
+    <div class="card">
+      <p style="color:#555; margin-bottom:1rem;">{{ game.brief_desc }}</p>
+      <table>
+        <tr><th>Slug</th><td><code>{{ game.slug }}</code></td></tr>
+        <tr><th>Players</th><td>{{ game.min_players }} – {{ game.max_players }}</td></tr>
+        <tr><th>Installed</th><td>{{ game.installed_at|date:"Y-m-d" }}</td></tr>
+        {% if game.published_at %}
+        <tr><th>Published</th><td>{{ game.published_at|date:"Y-m-d" }}</td></tr>
+        {% endif %}
+        {% if game.owner %}
+        <tr><th>Installed by</th><td>{{ game.owner.username }}</td></tr>
+        {% endif %}
+      </table>
+    </div>
+
+    {% if can_install and form %}
+    <div class="card">
+      <h2>Edit Game</h2>
+      <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+          <p>
+            <label>{{ field.label }}</label>{{ field }}
+            {% if field.errors %}<ul class="errorlist">{% for e in field.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </p>
+        {% endfor %}
+        <button type="submit" class="btn btn-success">Save</button>
+        {% if game.status == 'dev' %}
+          <a href="{% url 'wsz6_play:debug_launch' game.slug %}" class="btn btn-warning" style="margin-left:.5rem;">▶ Start in Debug Mode</a>
+        {% endif %}
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Recent Sessions</h2>
+    <table>
+      <tr><th>Owner</th><th>Status</th><th>Date</th></tr>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.owner.username }}</td>
+        <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+        <td>{{ s.started_at|date:"Y-m-d" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="3">No sessions yet.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+</div>
+<a href="{% url 'games_catalog:list' %}" style="display:inline-block; margin-top:.5rem;">← Back to games</a>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Sessions – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<h1>Sessions</h1>
+<div class="card">
+  <form class="search-bar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search by game or owner…">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if q %}<a href="?" class="btn">Clear</a>{% endif %}
+  </form>
+  <table>
+    <tr><th>Game</th><th>Owner</th><th>Status</th><th>Started</th><th>Ended</th></tr>
+    {% for s in sessions %}
+    <tr>
+      <td>{{ s.game.name }}</td>
+      <td>{{ s.owner.username }}</td>
+      <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+      <td>{{ s.started_at|date:"Y-m-d H:i" }}</td>
+      <td>{{ s.ended_at|date:"Y-m-d H:i"|default:"—" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No sessions yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

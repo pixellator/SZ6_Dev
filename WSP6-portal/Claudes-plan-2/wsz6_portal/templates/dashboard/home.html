@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+{% if user.is_any_admin %}
+<div class="stat-grid">
+  <div class="stat-card"><div class="number">{{ user_count }}</div><div class="label">Users</div></div>
+  <div class="stat-card"><div class="number">{{ game_count }}</div><div class="label">Games installed</div></div>
+  <div class="stat-card"><div class="number">{{ session_count }}</div><div class="label">Total sessions</div></div>
+  <div class="stat-card"><div class="number">{{ active_sessions|length }}</div><div class="label">Active now</div></div>
+</div>
+
+{% if active_sessions %}
+<div class="card">
+  <h2>Active sessions</h2>
+  <table>
+    <tr><th>Game</th><th>Owner</th><th>Status</th><th>Started</th><th></th></tr>
+    {% for s in active_sessions %}
+    <tr>
+      <td>{{ s.game.name }}</td>
+      <td>{{ s.owner.username }}</td>
+      <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+      <td>{{ s.started_at|date:"Y-m-d H:i" }}</td>
+      <td><a href="{% url 'dashboard:live_sessions' %}" class="btn btn-sm btn-primary">Monitor</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Recently installed games</h2>
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Installed</th></tr>
+    {% for g in recent_games %}
+    <tr>
+      <td><a href="{% url 'games_catalog:detail' g.slug %}">{{ g.name }}</a></td>
+      <td><span class="badge badge-{{ g.status }}">{{ g.get_status_display }}</span></td>
+      <td>{{ g.installed_at|date:"Y-m-d" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">No games installed yet. <a href="{% url 'games_catalog:install' %}">Install one.</a></td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:.5rem;">
+  <a href="{% url 'dashboard:user_list' %}" class="btn btn-primary">Manage Users</a>
+  <a href="{% url 'games_catalog:list' %}" class="btn btn-primary">Game Catalogue</a>
+  <a href="{% url 'dashboard:live_sessions' %}" class="btn btn-primary">Live Sessions</a>
+  <a href="{% url 'games_catalog:install' %}" class="btn btn-success">Install New Game</a>
+</div>
+
+{% else %}
+{# Non-admin dashboard #}
+<div class="card">
+  <h2>Welcome, {{ user.first_name|default:user.username }}!</h2>
+  <p style="margin:.5rem 0;">Select a game to start a new session.</p>
+  <a href="{% url 'games_catalog:list' %}" class="btn btn-primary">Browse Games</a>
+  <a href="{% url 'sessions_log:list' %}" class="btn btn-primary" style="margin-left:.5rem;">My Sessions</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Games – WSZ6 Portal{% endblock %}
+
+{% block content %}
+<div style="display:flex; align-items:center; gap:1rem; margin-bottom:.8rem;">
+  <h1 style="margin:0;">Games</h1>
+  {% if can_install %}
+    <a href="{% url 'games_catalog:install' %}" class="btn btn-success btn-sm">+ Install Game</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <form class="search-bar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search games…">
+    <button type="submit" class="btn btn-primary">Search</button>
+    {% if q %}<a href="?" class="btn">Clear</a>{% endif %}
+  </form>
+  <table>
+    <tr><th>Name</th><th>Status</th><th>Players</th><th>Sessions</th><th></th></tr>
+    {% for g in games %}
+    <tr>
+      <td>
+        <a href="{% url 'games_catalog:detail' g.slug %}"><strong>{{ g.name }}</strong></a>
+        {% if g.brief_desc %}<br><small style="color:#666;">{{ g.brief_desc|truncatechars:80 }}</small>{% endif %}
+      </td>
+      <td><span class="badge badge-{{ g.status }}">{{ g.get_status_display }}</span></td>
+      <td>{{ g.min_players }}–{{ g.max_players }}</td>
+      <td>{{ g.session_count }}</td>
+      <td><a href="{% url 'games_catalog:detail' g.slug %}" class="btn btn-sm btn-primary">Details</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No games found.
+      {% if can_install %}<a href="{% url 'games_catalog:install' %}">Install one.</a>{% endif %}
+    </td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
