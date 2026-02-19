@@ -5,17 +5,18 @@ In-game WebSocket consumer.
 
 Handles the live game loop for one player connection:
   - Authenticates the player via their role_token.
-  - Receives operator-apply and undo commands.
+  - Receives operator-apply, undo, pause, and help commands.
   - Forwards commands to the shared GameRunner.
-  - Receives state_update / transition_msg / goal_reached broadcasts
-    from the GameRunner via the Channel group and relays them to the
-    browser (filtering operators to the player's role).
+  - Receives state_update / transition_msg / goal_reached / game_paused
+    broadcasts from the GameRunner via the Channel group and relays them
+    to the browser (filtering operators to the player's role).
 
 WebSocket URL:  ws://<host>/ws/game/<session_key>/<role_token>/
 
 ── Messages from client ──────────────────────────────────────────────────
   {type: "apply_operator", op_index: <int>, args: [...]}
   {type: "request_undo"}
+  {type: "request_pause"}                                    (owner only)
   {type: "request_help"}
 
 ── Messages to client (from channel group) ───────────────────────────────
@@ -24,6 +25,7 @@ WebSocket URL:  ws://<host>/ws/game/<session_key>/<role_token>/
                            your_role_num}
   {type: "transition_msg", message, step}
   {type: "goal_reached",   step, goal_message}
+  {type: "game_paused",    checkpoint_id, step}
   {type: "error",          message}
 """
 
@@ -34,7 +36,13 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from wsz6_play import session_store
 from wsz6_play.engine.game_runner import GameError
 from wsz6_play.engine.state_serializer import serialize_state
-from wsz6_play.persistence.session_sync import push_session_ended
+from wsz6_play.persistence.checkpoint import save_checkpoint
+from wsz6_play.persistence.session_sync import (
+    push_playthrough_ended,
+    push_playthrough_step,
+    push_session_ended,
+    push_session_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +75,11 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
 
         self.role_num = player.role_num
 
+        # Determine owner status for this connection (used for pause permission).
+        user     = self.scope.get('user')
+        is_auth  = user and getattr(user, 'is_authenticated', False)
+        self.is_owner = is_auth and (user.id == session.get('owner_id'))
+
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
@@ -88,6 +101,7 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
             'operators':        _filter_ops_for_role(ops, self.role_num),
             'current_role_num': getattr(state, 'current_role_num', 0),
             'your_role_num':    self.role_num,
+            'is_owner':         self.is_owner,
         })
 
     async def disconnect(self, close_code):
@@ -107,12 +121,14 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         msg_type = content.get('type')
         if   msg_type == 'apply_operator': await self._handle_apply(content, session)
         elif msg_type == 'request_undo':   await self._handle_undo(session)
+        elif msg_type == 'request_pause':  await self._handle_pause(session)
         elif msg_type == 'request_help':
             await self.send_json({
                 'type':    'help',
                 'message': (
                     'Click an applicable operator to apply it. '
                     '"Undo" rolls back one step. '
+                    '"Pause" saves progress and suspends the session. '
                     'Only operators available on your turn are highlighted.'
                 ),
             })
@@ -154,31 +170,18 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         # Log the event.
         gdm_writer = session.get('gdm_writer')
         if gdm_writer:
-            ops     = runner.formulation.operators.operators
-            op      = ops[op_index] if 0 <= op_index < len(ops) else None
-            op_name = (
-                op.name(runner.current_state) if op and callable(op.name)
-                else (op.name if op else '?')
-            )
+            op_name = _get_op_name(runner, op_index)
             await gdm_writer.write_event(
                 'operator_applied',
                 step=runner.step, op_index=op_index, op_name=op_name,
                 args=args, role_num=self.role_num,
             )
-            if runner.finished:
-                try:
-                    goal_msg = runner.current_state.goal_message()
-                except Exception:
-                    goal_msg = "Goal reached!"
-                await gdm_writer.write_event(
-                    'game_ended',
-                    outcome='goal_reached',
-                    goal_message=goal_msg,
-                    step=runner.step,
-                )
-                summary = _build_summary(session, runner, 'completed')
-                await push_session_ended(self.session_key, summary)
-                session_store.update_session(self.session_key, {'status': 'ended'})
+
+        if runner.finished:
+            await self._on_game_ended(session, runner, gdm_writer)
+        else:
+            # Trigger any bots whose turn it now is.
+            await self._trigger_bots(session, runner)
 
     async def _handle_undo(self, session):
         runner = session.get('game_runner')
@@ -194,8 +197,122 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         if gdm_writer:
             await gdm_writer.write_event('undo_applied', step=runner.step)
 
+    async def _handle_pause(self, session):
+        if not self.is_owner:
+            await self.send_json({
+                'type': 'error', 'message': 'Only the session owner can pause the game.'
+            })
+            return
+
+        runner = session.get('game_runner')
+        if runner is None or runner.finished:
+            await self.send_json({
+                'type': 'error', 'message': 'Cannot pause: game not running.'
+            })
+            return
+
+        # Save checkpoint and update session state.
+        checkpoint_id = await save_checkpoint(session, runner, label='pause')
+        session_store.update_session(self.session_key, {
+            'status':                'paused',
+            'latest_checkpoint_id':  checkpoint_id,
+        })
+
+        # Update UARD status and PlayThrough step count.
+        playthrough_id = session.get('playthrough_id', '')
+        await push_session_status(self.session_key, 'paused')
+        if playthrough_id:
+            await push_playthrough_step(playthrough_id, runner.step)
+
+        # Write game_paused event to GDM log.
+        gdm_writer = session.get('gdm_writer')
+        if gdm_writer:
+            await gdm_writer.write_event(
+                'game_paused',
+                checkpoint_id=checkpoint_id,
+                step=runner.step,
+            )
+
+        # Broadcast to all players in the game group.
+        await self.channel_layer.group_send(
+            self.group_name,
+            {
+                'type':          'game_paused',
+                'checkpoint_id': checkpoint_id,
+                'step':          runner.step,
+            },
+        )
+
     # ----------------------------------------------------------------
-    # Channel layer message handlers
+    # Bot triggering
+    # ----------------------------------------------------------------
+
+    async def _trigger_bots(self, session, runner):
+        """Call maybe_move for any bot whose turn it is.  Loops until a
+        non-bot role is current or the game ends."""
+        bots = session.get('bots', [])
+        if not bots:
+            return
+
+        gdm_writer = session.get('gdm_writer')
+
+        for _ in range(20):   # safety limit
+            if runner.finished:
+                if gdm_writer:
+                    await self._on_game_ended(session, runner, gdm_writer,
+                                              _already_logged=True)
+                break
+
+            current_role = getattr(runner.current_state, 'current_role_num', -1)
+            did_move = False
+            for bot in bots:
+                op_index = await bot.maybe_move(runner, current_role)
+                if op_index is not None:
+                    if gdm_writer:
+                        op_name = _get_op_name(runner, op_index)
+                        await gdm_writer.write_event(
+                            'operator_applied',
+                            step=runner.step, op_index=op_index, op_name=op_name,
+                            args=None, role_num=bot.role_num,
+                        )
+                    did_move = True
+                    break   # re-evaluate after this bot's move
+
+            if not did_move:
+                break   # human's turn
+
+            if runner.finished:
+                await self._on_game_ended(session, runner, gdm_writer)
+                break
+
+    # ----------------------------------------------------------------
+    # Game-ended helper
+    # ----------------------------------------------------------------
+
+    async def _on_game_ended(self, session, runner, gdm_writer, _already_logged=False):
+        """Write GDM events, update PlayThrough and UARD, close session."""
+        if not _already_logged and gdm_writer:
+            try:
+                goal_msg = runner.current_state.goal_message()
+            except Exception:
+                goal_msg = "Goal reached!"
+            await gdm_writer.write_event(
+                'game_ended',
+                outcome='goal_reached',
+                goal_message=goal_msg,
+                step=runner.step,
+            )
+
+        playthrough_id = session.get('playthrough_id', '')
+        if playthrough_id:
+            await push_playthrough_ended(playthrough_id, runner.step, 'completed')
+
+        summary = _build_summary(session, runner, 'completed')
+        await push_session_ended(self.session_key, summary)
+        session_store.update_session(self.session_key, {'status': 'ended'})
+
+    # ----------------------------------------------------------------
+    # Channel layer message handlers (called by group_send)
     # ----------------------------------------------------------------
 
     async def state_update(self, event):
@@ -206,6 +323,9 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(event)
 
     async def goal_reached(self, event):
+        await self.send_json(event)
+
+    async def game_paused(self, event):
         await self.send_json(event)
 
 
@@ -221,6 +341,15 @@ def _filter_ops_for_role(ops: list, role_num: int) -> list:
     - All other role-specific operators are hidden.
     """
     return [op for op in ops if op.get('role') in (None, role_num)]
+
+
+def _get_op_name(runner, op_index: int) -> str:
+    """Return the display name of an operator by index."""
+    ops = runner.formulation.operators.operators
+    op  = ops[op_index] if 0 <= op_index < len(ops) else None
+    if op is None:
+        return '?'
+    return op.name(runner.current_state) if callable(op.name) else op.name
 
 
 def _build_summary(session: dict, runner, outcome: str) -> dict:

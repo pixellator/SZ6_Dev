@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Lobby – {{ game_name }} – WSZ6 Portal{% endblock %}
+{% block title %}{% if is_resume %}Resume{% else %}Lobby{% endif %} – {{ game_name }} – WSZ6 Portal{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -7,18 +7,24 @@
   .role-row      { display: flex; align-items: center; gap: .6rem; padding: .5rem 0; border-bottom: 1px solid #e0e0e0; }
   .role-name     { font-weight: 600; min-width: 120px; }
   .player-chip   { background: #d4edda; color: #155724; padding: .15rem .5rem; border-radius: 10px; font-size:.85rem; }
+  .bot-chip      { background: #d1ecf1; color: #0c5460; padding: .15rem .5rem; border-radius: 10px; font-size:.85rem; }
   .empty-slot    { color: #aaa; font-style: italic; font-size:.9rem; }
   .unassigned-list { list-style: none; }
   .unassigned-list li { padding: .35rem .5rem; background:#f0f4f8; border-radius:4px; margin-bottom:.3rem; cursor:pointer; font-size:.9rem; }
   .unassigned-list li:hover { background: #e2eaf2; }
   #status-bar    { padding: .5rem .8rem; background:#e8f4fd; border-radius:4px; font-size:.88rem; margin-bottom:.8rem; color:#0c5460; }
   .assign-hint   { font-size:.78rem; color:#666; margin-top:.4rem; }
+  .resume-banner { background:#fff3cd; color:#856404; padding:.6rem 1rem; border-radius:4px;
+                   margin-bottom:.8rem; font-weight:600; }
   @media (max-width:700px) { .lobby-wrap { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1>Lobby: {{ game_name }}</h1>
+<h1>{% if is_resume %}Resume Session{% else %}Lobby{% endif %}: {{ game_name }}</h1>
+{% if is_resume %}
+<div class="resume-banner">⏸ This session is paused. The owner can resume it below.</div>
+{% endif %}
 <p style="color:#666; font-size:.9rem; margin-bottom:.8rem;">Session: <code>{{ session_key }}</code>
   &nbsp;|&nbsp; Share this URL with other players: <code>{{ request.build_absolute_uri }}</code></p>
 
@@ -37,10 +43,14 @@
       <button class="btn btn-primary btn-sm" onclick="sendJoin()">Set name</button>
     </div>
 
-    <!-- Start Game (owner only, shown after connected) -->
+    <!-- Start / Resume Game (owner only, shown after connected) -->
     <div id="start-section" style="display:none; margin-top:1rem;">
-      <button id="start-btn" class="btn btn-success" onclick="sendStartGame()">▶ Start Game</button>
+      <button id="start-btn" class="btn btn-success" onclick="sendStartGame()">
+        {% if is_resume %}▶ Resume Session{% else %}▶ Start Game{% endif %}
+      </button>
+      {% if not is_resume %}
       <p class="assign-hint">Assign all required roles above before starting.</p>
+      {% endif %}
     </div>
   </div>
 
@@ -62,6 +72,7 @@
   const SESSION_KEY = "{{ session_key }}";
   const WS_URL      = "{{ ws_url }}";
   const MY_USERNAME = "{{ request.user.username|escapejs }}";
+  const IS_RESUME   = {{ is_resume|yesno:"true,false" }};
 
   let ws            = null;
   let myToken       = null;
@@ -99,7 +110,9 @@
     const nameInput = document.getElementById('name-input');
     if (!nameInput.value) { nameInput.value = MY_USERNAME; sendJoin(); }
     if (isOwner) document.getElementById('start-section').style.display = 'block';
-    setStatus(isOwner ? 'You are the session owner.' : 'Waiting for owner to start…');
+    setStatus(isOwner
+      ? (IS_RESUME ? 'Session is paused. You can resume it.' : 'You are the session owner.')
+      : 'Waiting for owner to start…');
   }
 
   function onLobbyState(msg) {
@@ -120,16 +133,25 @@
     if (!rolesData || !rolesData.roles) { el.innerHTML = '<p style="color:#aaa;">No roles.</p>'; return; }
     let html = '';
     for (const r of rolesData.roles) {
-      const playerHtml = r.player
-        ? `<span class="player-chip">${esc(r.player.name)}</span>`
-        : `<span class="empty-slot">empty</span>`;
+      let playerHtml;
+      if (r.player) {
+        const chipClass = r.player.is_bot ? 'bot-chip' : 'player-chip';
+        const label = r.player.is_bot ? '🤖 ' + esc(r.player.name) : esc(r.player.name);
+        playerHtml = `<span class="${chipClass}">${label}</span>`;
+      } else {
+        playerHtml = '<span class="empty-slot">empty</span>';
+      }
       let assignBtn = '';
       if (isOwner && selectedToken && !r.player) {
         assignBtn = `<button class="btn btn-sm btn-success" style="margin-left:.5rem;" onclick="assignRole(${r.role_num})">Assign here</button>`;
       }
+      let botBtn = '';
+      if (isOwner && !r.player) {
+        botBtn = `<button class="btn btn-sm btn-outline-secondary" style="margin-left:.3rem; font-size:.75rem;" onclick="assignBot(${r.role_num})">+ Bot</button>`;
+      }
       html += `<div class="role-row">
         <span class="role-name">${esc(r.name)}</span>
-        ${playerHtml}${assignBtn}
+        ${playerHtml}${assignBtn}${botBtn}
         <span style="font-size:.75rem;color:#999;margin-left:auto;">${esc(r.description||'')}</span>
       </div>`;
     }
@@ -175,6 +197,10 @@
     if (!selectedToken) return;
     send({ type: 'assign_role', token: selectedToken, role_num: roleNum });
     selectedToken = null;
+  };
+
+  window.assignBot = function(roleNum) {
+    send({ type: 'assign_bot', role_num: roleNum, strategy: 'random' });
   };
 
   function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }

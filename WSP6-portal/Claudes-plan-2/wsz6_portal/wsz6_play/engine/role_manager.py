@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 class PlayerInfo:
     """Mutable record for one connected player."""
 
-    __slots__ = ('token', 'name', 'role_num', 'is_bot', 'user_id')
+    __slots__ = ('token', 'name', 'role_num', 'is_bot', 'user_id', 'strategy')
 
     def __init__(
         self,
@@ -26,12 +26,14 @@ class PlayerInfo:
         role_num: int = -1,
         is_bot: bool = False,
         user_id: Optional[int] = None,
+        strategy: str = 'random',
     ):
         self.token    = token
         self.name     = name
         self.role_num = role_num   # -1 means unassigned
         self.is_bot   = is_bot
         self.user_id  = user_id   # Django user ID, or None for guests
+        self.strategy = strategy  # bot strategy: 'random' or 'first'
 
 
 class RoleManager:

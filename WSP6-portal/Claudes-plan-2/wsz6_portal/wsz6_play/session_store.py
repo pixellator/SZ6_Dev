@@ -15,18 +15,20 @@ Phase-7 upgrade path:
 
 Session dict structure
 ----------------------
-session_key     str                 UUID string
-game_slug       str                 e.g. "tic-tac-toe"
-game_name       str                 e.g. "Tic-Tac-Toe"
-owner_id        int | None          Django user ID of session owner
-pff_path        str                 Absolute path to game directory
-status          str                 'lobby' | 'in_progress' | 'ended'
-role_manager    RoleManager | None  None until first lobby connection
-game_runner     GameRunner | None   None until game starts
-gdm_writer      GDMWriter | None    None until game starts
-playthrough_id  str | None          UUID hex; set when game starts
-session_dir     str                 Absolute path to GDM session directory
-started_at      str                 ISO 8601 UTC timestamp
+session_key             str                 UUID string
+game_slug               str                 e.g. "tic-tac-toe"
+game_name               str                 e.g. "Tic-Tac-Toe"
+owner_id                int | None          Django user ID of session owner
+pff_path                str                 Absolute path to game directory
+status                  str                 'lobby' | 'in_progress' | 'paused' | 'ended'
+role_manager            RoleManager | None  None until first lobby connection
+game_runner             GameRunner | None   None until game starts
+gdm_writer              GDMWriter | None    None until game starts
+playthrough_id          str | None          UUID hex; set when game starts
+latest_checkpoint_id    str | None          UUID hex of most recent checkpoint (Phase 3)
+bots                    list                BotPlayer instances ([] if no bots) (Phase 3)
+session_dir             str                 Absolute path to GDM session directory
+started_at              str                 ISO 8601 UTC timestamp
 """
 
 import threading

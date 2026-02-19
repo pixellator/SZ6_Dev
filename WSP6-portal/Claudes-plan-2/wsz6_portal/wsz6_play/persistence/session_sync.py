@@ -31,6 +31,18 @@ async def push_session_status(session_key: str, status: str) -> None:
     await asyncio.to_thread(_update_status_sync, session_key, status)
 
 
+async def push_playthrough_ended(
+    playthrough_id: str, step_count: int, outcome: str
+) -> None:
+    """Mark the GDM PlayThrough record as ended."""
+    await asyncio.to_thread(_update_playthrough_sync, playthrough_id, step_count, outcome)
+
+
+async def push_playthrough_step(playthrough_id: str, step_count: int) -> None:
+    """Update only the step_count on the GDM PlayThrough (e.g. on pause)."""
+    await asyncio.to_thread(_update_playthrough_step_sync, playthrough_id, step_count)
+
+
 # ---------------------------------------------------------------------------
 # Synchronous helpers (run in thread pool)
 # ---------------------------------------------------------------------------
@@ -61,3 +73,32 @@ def _update_status_sync(session_key: str, status: str) -> None:
             gs.save(update_fields=['status'])
     except Exception as exc:
         logger.warning("session_sync: failed to update status for %s: %s", session_key, exc)
+
+
+def _update_playthrough_sync(
+    playthrough_id: str, step_count: int, outcome: str
+) -> None:
+    try:
+        from wsz6_play.models import PlayThrough
+        pt = PlayThrough.objects.using('gdm').filter(playthrough_id=playthrough_id).first()
+        if pt is None:
+            logger.warning("session_sync: PlayThrough %s not found", playthrough_id)
+            return
+        pt.ended_at   = datetime.now(timezone.utc)
+        pt.outcome    = outcome
+        pt.step_count = step_count
+        pt.save(update_fields=['ended_at', 'outcome', 'step_count'])
+        logger.info("session_sync: PlayThrough %s → %s, steps=%d", playthrough_id, outcome, step_count)
+    except Exception as exc:
+        logger.warning("session_sync: failed to update PlayThrough %s: %s", playthrough_id, exc)
+
+
+def _update_playthrough_step_sync(playthrough_id: str, step_count: int) -> None:
+    try:
+        from wsz6_play.models import PlayThrough
+        pt = PlayThrough.objects.using('gdm').filter(playthrough_id=playthrough_id).first()
+        if pt:
+            pt.step_count = step_count
+            pt.save(update_fields=['step_count'])
+    except Exception as exc:
+        logger.warning("session_sync: failed to update step_count for %s: %s", playthrough_id, exc)

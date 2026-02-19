@@ -23,6 +23,8 @@
                     border-radius:4px; margin-bottom:.6rem; display:none; }
   #goal-banner    { padding:.8rem 1rem; background:#d4edda; color:#155724;
                     border-radius:4px; font-size:1.1rem; font-weight:700; display:none; }
+  #paused-banner  { padding:.8rem 1rem; background:#fff3cd; color:#856404;
+                    border-radius:4px; font-size:1rem; font-weight:600; display:none; }
   @media (max-width:700px) { .game-wrap { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
@@ -32,6 +34,7 @@
 <div id="status-bar">Connecting…</div>
 <div id="transition-msg"></div>
 <div id="goal-banner"></div>
+<div id="paused-banner"></div>
 
 <div class="game-wrap">
 
@@ -43,13 +46,16 @@
     <div id="turn-banner" style="margin-top:.5rem;"></div>
   </div>
 
-  <!-- Right: operator list + undo -->
+  <!-- Right: operator list + controls -->
   <div class="card">
     <h2>Operators</h2>
     <ul id="ops-list"><li style="color:#aaa; font-style:italic; font-size:.9rem;">Waiting…</li></ul>
     <hr style="margin:1rem 0; border-color:#e0e0e0;">
     <button class="btn btn-warning btn-sm" onclick="sendUndo()" id="undo-btn">↩ Undo</button>
     <button class="btn btn-primary btn-sm" onclick="sendHelp()" style="margin-left:.4rem;">? Help</button>
+    {% if is_owner %}
+    <button class="btn btn-secondary btn-sm" onclick="sendPause()" id="pause-btn" style="margin-left:.4rem;">⏸ Pause</button>
+    {% endif %}
     <div id="help-msg" style="display:none; margin-top:.6rem; font-size:.85rem; color:#555;"></div>
   </div>
 
@@ -88,6 +94,7 @@
     if      (msg.type === 'state_update')   onStateUpdate(msg);
     else if (msg.type === 'transition_msg') onTransition(msg);
     else if (msg.type === 'goal_reached')   onGoalReached(msg);
+    else if (msg.type === 'game_paused')    onGamePaused(msg);
     else if (msg.type === 'help')           showHelp(msg.message);
     else if (msg.type === 'error')          setStatus('⚠ ' + msg.message);
   }
@@ -123,6 +130,21 @@
     showGoal(msg.goal_message || 'Goal reached!');
     renderOps([], false);
     document.getElementById('undo-btn').disabled = true;
+    const pauseBtn = document.getElementById('pause-btn');
+    if (pauseBtn) pauseBtn.disabled = true;
+  }
+
+  function onGamePaused(msg) {
+    gameOver = true;   // stop further interaction
+    renderOps([], false);
+    document.getElementById('undo-btn').disabled = true;
+    const pauseBtn = document.getElementById('pause-btn');
+    if (pauseBtn) pauseBtn.disabled = true;
+    document.getElementById('turn-banner').innerHTML = '';
+    const banner = document.getElementById('paused-banner');
+    banner.textContent = '⏸ Game paused at step ' + msg.step + '. Navigate to the lobby URL to resume.';
+    banner.style.display = 'block';
+    setStatus('Game paused (checkpoint saved).');
   }
 
   // ── Rendering ────────────────────────────────────────────────────
@@ -171,6 +193,13 @@
 
   window.sendHelp = function() {
     send({ type: 'request_help' });
+  };
+
+  window.sendPause = function() {
+    if (confirm('Pause the game? All players will be disconnected from the game page.')) {
+      send({ type: 'request_pause' });
+      document.getElementById('pause-btn').disabled = true;
+    }
   };
 
   function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }

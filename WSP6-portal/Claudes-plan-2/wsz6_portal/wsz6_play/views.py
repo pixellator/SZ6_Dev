@@ -32,11 +32,15 @@ def join_session(request, session_key):
                     return redirect('wsz6_play:game_page', session_key=sk,
                                     role_token=player.token)
 
+    # Paused session: show the "Resume Session" lobby page.
+    is_resume = session['status'] == 'paused'
+
     return render(request, 'wsz6_play/join.html', {
         'session_key': sk,
         'game_name':   session.get('game_name', ''),
         'game_slug':   session.get('game_slug', ''),
         'ws_url':      f'/ws/lobby/{sk}/',
+        'is_resume':   is_resume,
     })
 
 
@@ -46,10 +50,13 @@ def game_page(request, session_key, role_token):
     ``/ws/game/<session_key>/<role_token>/``.
     """
     sk = str(session_key)
+    session  = session_store.get_session(sk)
+    is_owner = bool(session and request.user.id == session.get('owner_id'))
     return render(request, 'wsz6_play/game.html', {
         'session_key': sk,
         'role_token':  role_token,
         'ws_url':      f'/ws/game/{sk}/{role_token}/',
+        'is_owner':    is_owner,
     })
 
 
