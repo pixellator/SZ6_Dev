@@ -28,6 +28,7 @@ SZ5-bug prevention note:
     formulation between sessions.
 """
 
+import asyncio
 import logging
 from typing import Any, Callable, Coroutine, List, Optional
 
@@ -70,8 +71,12 @@ class GameRunner:
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Initialise the formulation and broadcast the initial state."""
-        initial_state     = self.formulation.initialize_problem()
+        """Initialise the formulation and broadcast the initial state.
+
+        initialize_problem() runs in a thread so package imports and any
+        setup I/O (e.g. creating an LLM client) don't block the event loop.
+        """
+        initial_state     = await asyncio.to_thread(self.formulation.initialize_problem)
         self.state_stack  = [initial_state]
         self.current_state = initial_state
         self.step          = 0
@@ -101,13 +106,14 @@ class GameRunner:
         # the calling convention.  Textual_SOLUZION6 uses the same rule:
         #   if op.params → state_xition_func(state, args)
         #   else         → state_xition_func(state)
+        # Run in a thread so blocking I/O (e.g. an LLM HTTP call) never
+        # stalls the async event loop.
         has_params = bool(getattr(op, 'params', None))
         try:
-            new_state = (
-                op.state_xition_func(state, args)
-                if has_params
-                else op.state_xition_func(state)
-            )
+            if has_params:
+                new_state = await asyncio.to_thread(op.state_xition_func, state, args)
+            else:
+                new_state = await asyncio.to_thread(op.state_xition_func, state)
         except Exception as exc:
             raise GameError(f"Operator execution failed: {exc}") from exc
 

@@ -369,7 +369,24 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
 
         # Initialise game state (broadcasts initial state_update to the game group;
         # players haven't joined that group yet but the state is ready when they do).
-        await runner.start()
+        # initialize_problem() runs inside a thread (see game_runner.start), so
+        # failures here (missing API key, broken PFF, etc.) surface as exceptions.
+        try:
+            await runner.start()
+        except Exception as exc:
+            # Revert to lobby so the owner can fix the problem and try again.
+            session_store.update_session(self.session_key, {
+                'status':     'lobby',
+                'game_runner': None,
+                'bots':        [],
+            })
+            await push_session_status(self.session_key, 'open')
+            logger.error("runner.start() failed for session %s: %s", self.session_key, exc)
+            await self.send_json({
+                'type':    'error',
+                'message': f'Failed to start game: {exc}',
+            })
+            return
 
         # If the very first turn belongs to a bot, schedule its moves now.
         # Uses ensure_future so game_starting redirects reach browsers first.
