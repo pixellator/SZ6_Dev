@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WSZ6 WebSocket Echo Test</title>
+  <style>
+    body { font-family: monospace; max-width: 700px; margin: 2rem auto; }
+    #log { border: 1px solid #ccc; padding: 1rem; height: 300px;
+           overflow-y: auto; background: #f8f8f8; }
+    .sent     { color: #0055cc; }
+    .received { color: #007700; }
+    .system   { color: #888; }
+    input[type=text] { width: 70%; padding: .4rem; }
+    button { padding: .4rem 1rem; }
+  </style>
+</head>
+<body>
+  <h2>WSZ6 – WebSocket Echo Test (Phase 0)</h2>
+  <div id="log"></div>
+  <br>
+  <input type="text" id="msg" placeholder='{"hello": "world"}' />
+  <button onclick="sendMsg()">Send</button>
+  <button onclick="disconnect()">Disconnect</button>
+
+  <script>
+    const log  = document.getElementById('log');
+    const msg  = document.getElementById('msg');
+    const wsUrl = 'ws://' + location.host + '/ws/echo/';
+
+    function append(text, cls) {
+      const p = document.createElement('p');
+      p.className = cls;
+      p.textContent = text;
+      log.appendChild(p);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    append('Connecting to ' + wsUrl + ' …', 'system');
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen  = () => append('Connected.', 'system');
+    ws.onclose = (e) => append('Disconnected. Code: ' + e.code, 'system');
+    ws.onerror = (e) => append('Error: ' + e, 'system');
+    ws.onmessage = (e) => {
+      append('← ' + e.data, 'received');
+    };
+
+    function sendMsg() {
+      const text = msg.value.trim();
+      if (!text) return;
+      try {
+        const obj = JSON.parse(text);
+        ws.send(JSON.stringify(obj));
+        append('→ ' + text, 'sent');
+      } catch (err) {
+        append('Invalid JSON: ' + err.message, 'system');
+      }
+    }
+
+    function disconnect() { ws.close(); }
+
+    msg.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
+  </script>
+</body>
+</html>
