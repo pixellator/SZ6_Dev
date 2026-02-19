@@ -29,8 +29,14 @@
 {% if is_resume %}
 <div class="resume-banner">⏸ This session is paused. The owner can resume it below.</div>
 {% endif %}
-<p style="color:#666; font-size:.9rem; margin-bottom:.8rem;">Session: <code>{{ session_key }}</code>
-  &nbsp;|&nbsp; Share this URL with other players: <code>{{ request.build_absolute_uri }}</code></p>
+<p style="color:#666; font-size:.9rem; margin-bottom:.8rem;">
+  Session: <code>{{ session_key }}</code>
+  &nbsp;|&nbsp; Share this URL with other players: <code>{{ request.build_absolute_uri }}</code>
+  <button class="btn btn-sm btn-outline-secondary" style="margin-left:.4rem; font-size:.8rem;"
+          onclick="navigator.clipboard.writeText('{{ request.build_absolute_uri|escapejs }}').then(()=>this.textContent='Copied!').catch(()=>this.textContent='Copy failed')">
+    Copy URL
+  </button>
+</p>
 
 <div id="status-bar">Connecting…</div>
 
@@ -61,7 +67,7 @@
   <!-- Right: connected/unassigned players -->
   <div class="card">
     <h2>Connected Players</h2>
-    <p class="assign-hint">Click a player to select, then click <em>Assign here</em> next to a role. Click × to unassign.</p>
+    <p id="assign-hint" class="assign-hint" style="display:none;">Click a player to select, then click <em>Assign here</em> next to a role. Click × to unassign.</p>
     <ul id="unassigned-list" class="unassigned-list">
       <li style="color:#aaa; font-style:italic;">Nobody yet</li>
     </ul>
@@ -113,7 +119,10 @@
     isOwner = msg.is_owner;
     const nameInput = document.getElementById('name-input');
     if (!nameInput.value) { nameInput.value = MY_USERNAME; sendJoin(); }
-    if (isOwner) document.getElementById('start-section').style.display = 'block';
+    if (isOwner) {
+      document.getElementById('start-section').style.display = 'block';
+      document.getElementById('assign-hint').style.display = 'block';
+    }
     setStatus(isOwner
       ? (IS_RESUME ? 'Session is paused. You can resume it.' : 'You are the session owner.')
       : 'Waiting for owner to start…');

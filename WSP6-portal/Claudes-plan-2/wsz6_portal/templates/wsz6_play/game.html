@@ -51,7 +51,7 @@
     <h2>Operators</h2>
     <ul id="ops-list"><li style="color:#aaa; font-style:italic; font-size:.9rem;">Waiting…</li></ul>
     <hr style="margin:1rem 0; border-color:#e0e0e0;">
-    <button class="btn btn-warning btn-sm" onclick="sendUndo()" id="undo-btn">↩ Undo</button>
+    <button class="btn btn-warning btn-sm" onclick="sendUndo()" id="undo-btn" disabled>↩ Undo</button>
     <button class="btn btn-primary btn-sm" onclick="sendHelp()" style="margin-left:.4rem;">? Help</button>
     {% if is_owner %}
     <button class="btn btn-secondary btn-sm" onclick="sendPause()" id="pause-btn" style="margin-left:.4rem;">⏸ Pause</button>
@@ -105,17 +105,24 @@
     myRoleNum = msg.your_role_num;
     document.getElementById('state-display').textContent = msg.state_text || JSON.stringify(msg.state, null, 2);
 
-    const isMyTurn = (!gameOver && msg.current_role_num === myRoleNum);
+    // Don't show "Your turn!" when the game is already over.
+    const isMyTurn = (!gameOver && !msg.is_goal && msg.current_role_num === myRoleNum);
     const turnBanner = document.getElementById('turn-banner');
-    turnBanner.innerHTML = isMyTurn
-      ? '<div class="my-turn-banner">Your turn!</div>'
-      : '<div class="wait-banner">Waiting for another player…</div>';
+    if (!gameOver && !msg.is_goal) {
+      turnBanner.innerHTML = isMyTurn
+        ? '<div class="my-turn-banner">Your turn!</div>'
+        : '<div class="wait-banner">Waiting for another player…</div>';
+    }
+
+    // Undo is only meaningful when there are moves to undo.
+    document.getElementById('undo-btn').disabled = (msg.step === 0 || gameOver || msg.is_goal);
 
     setStatus('Step ' + msg.step + (msg.is_goal ? ' — Goal reached!' : ''));
     renderOps(msg.operators, isMyTurn);
 
     if (msg.is_goal && !gameOver) {
       gameOver = true;
+      document.getElementById('turn-banner').innerHTML = '';
       showGoal('Goal reached at step ' + msg.step + '!');
     }
   }
