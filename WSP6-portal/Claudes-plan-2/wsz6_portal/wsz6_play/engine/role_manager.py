@@ -85,10 +85,14 @@ class RoleManager:
         roles = self.roles_spec.roles
         if not (0 <= role_num < len(roles)):
             return f"Role number {role_num} is out of range."
-        # Evict current occupant of that role.
-        for p in self._players.values():
-            if p.role_num == role_num:
-                p.role_num = -1
+        # Evict current occupant of that role (skip self-assignment).
+        for p in list(self._players.values()):
+            if p.role_num == role_num and p.token != token:
+                if p.is_bot:
+                    # Bots have no browser — remove entirely when displaced.
+                    del self._players[p.token]
+                else:
+                    p.role_num = -1
         player.role_num = role_num
         return ""
 
@@ -157,7 +161,7 @@ class RoleManager:
             'unassigned': [
                 {'token': p.token, 'name': p.name}
                 for p in self._players.values()
-                if p.role_num < 0
+                if p.role_num < 0 and not p.is_bot
             ],
         }
 

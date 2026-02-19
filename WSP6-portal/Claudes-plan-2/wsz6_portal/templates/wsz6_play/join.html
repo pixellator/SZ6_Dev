@@ -8,6 +8,10 @@
   .role-name     { font-weight: 600; min-width: 120px; }
   .player-chip   { background: #d4edda; color: #155724; padding: .15rem .5rem; border-radius: 10px; font-size:.85rem; }
   .bot-chip      { background: #d1ecf1; color: #0c5460; padding: .15rem .5rem; border-radius: 10px; font-size:.85rem; }
+  .selected-chip { box-shadow: 0 0 0 2px #0d6efd; }
+  .unassign-btn  { background: none; border: none; color: #dc3545; cursor: pointer;
+                   font-size: .9rem; font-weight: 700; padding: 0 .2rem; line-height: 1; }
+  .unassign-btn:hover { color: #a71d2a; }
   .empty-slot    { color: #aaa; font-style: italic; font-size:.9rem; }
   .unassigned-list { list-style: none; }
   .unassigned-list li { padding: .35rem .5rem; background:#f0f4f8; border-radius:4px; margin-bottom:.3rem; cursor:pointer; font-size:.9rem; }
@@ -57,7 +61,7 @@
   <!-- Right: connected/unassigned players -->
   <div class="card">
     <h2>Connected Players</h2>
-    <p class="assign-hint">Click a player to select them, then click <em>Assign</em> next to a role.</p>
+    <p class="assign-hint">Click a player to select, then click <em>Assign here</em> next to a role. Click × to unassign.</p>
     <ul id="unassigned-list" class="unassigned-list">
       <li style="color:#aaa; font-style:italic;">Nobody yet</li>
     </ul>
@@ -135,20 +139,37 @@
     for (const r of rolesData.roles) {
       let playerHtml;
       if (r.player) {
-        const chipClass = r.player.is_bot ? 'bot-chip' : 'player-chip';
-        const label = r.player.is_bot ? '🤖 ' + esc(r.player.name) : esc(r.player.name);
-        playerHtml = `<span class="${chipClass}">${label}</span>`;
+        if (r.player.is_bot) {
+          // Bot chip — not selectable; owner gets an × to remove it.
+          playerHtml = `<span class="bot-chip">🤖 ${esc(r.player.name)}</span>`;
+          if (isOwner) {
+            playerHtml += ` <button class="unassign-btn" onclick="unassignRole(${r.role_num})" title="Remove bot">×</button>`;
+          }
+        } else {
+          // Human chip — owner can click to select for reassignment; gets an × to unassign.
+          const isSelected = (r.player.token === selectedToken);
+          const clickAttr  = isOwner ? `onclick="selectPlayer('${r.player.token}')" style="cursor:pointer;"` : '';
+          playerHtml = `<span class="player-chip${isSelected ? ' selected-chip' : ''}" ${clickAttr}>${esc(r.player.name)}</span>`;
+          if (isOwner) {
+            playerHtml += ` <button class="unassign-btn" onclick="unassignRole(${r.role_num})" title="Unassign player">×</button>`;
+          }
+        }
       } else {
         playerHtml = '<span class="empty-slot">empty</span>';
       }
+
+      // "Assign here": show when owner has a selection that isn't already filling this role.
       let assignBtn = '';
-      if (isOwner && selectedToken && !r.player) {
+      if (isOwner && selectedToken && (!r.player || r.player.token !== selectedToken)) {
         assignBtn = `<button class="btn btn-sm btn-success" style="margin-left:.5rem;" onclick="assignRole(${r.role_num})">Assign here</button>`;
       }
+
+      // "+ Bot": only for empty slots.
       let botBtn = '';
       if (isOwner && !r.player) {
         botBtn = `<button class="btn btn-sm btn-outline-secondary" style="margin-left:.3rem; font-size:.75rem;" onclick="assignBot(${r.role_num})">+ Bot</button>`;
       }
+
       html += `<div class="role-row">
         <span class="role-name">${esc(r.name)}</span>
         ${playerHtml}${assignBtn}${botBtn}
@@ -201,6 +222,11 @@
 
   window.assignBot = function(roleNum) {
     send({ type: 'assign_bot', role_num: roleNum, strategy: 'random' });
+  };
+
+  window.unassignRole = function(roleNum) {
+    send({ type: 'unassign_role', role_num: roleNum });
+    selectedToken = null;
   };
 
   function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }

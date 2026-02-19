@@ -179,10 +179,11 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             return
 
         msg_type = content.get('type')
-        if   msg_type == 'join':        await self._handle_join(content, session)
-        elif msg_type == 'assign_role': await self._handle_assign_role(content, session)
-        elif msg_type == 'assign_bot':  await self._handle_assign_bot(content, session)
-        elif msg_type == 'start_game':  await self._handle_start_game(session)
+        if   msg_type == 'join':          await self._handle_join(content, session)
+        elif msg_type == 'assign_role':   await self._handle_assign_role(content, session)
+        elif msg_type == 'unassign_role': await self._handle_unassign_role(content, session)
+        elif msg_type == 'assign_bot':    await self._handle_assign_bot(content, session)
+        elif msg_type == 'start_game':    await self._handle_start_game(session)
         else:
             await self.send_json({
                 'type': 'error', 'message': f'Unknown message type: {msg_type!r}'
@@ -223,6 +224,35 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({'type': 'error', 'message': err})
         else:
             await self._broadcast_lobby_state(session)
+
+    async def _handle_unassign_role(self, content, session):
+        if not self._is_owner(session):
+            await self.send_json({
+                'type': 'error', 'message': 'Only the session owner can unassign roles.'
+            })
+            return
+        role_num = content.get('role_num')
+        try:
+            role_num = int(role_num)
+        except (TypeError, ValueError):
+            await self.send_json({'type': 'error', 'message': 'role_num must be an integer.'})
+            return
+
+        rm    = session['role_manager']
+        token = rm.get_token_for_role(role_num)
+        if token is None:
+            await self._broadcast_lobby_state(session)
+            return
+
+        player = rm.get_player(token)
+        if player and player.is_bot:
+            # Bots have no browser — remove them from the RM entirely.
+            rm.remove_player(token)
+        else:
+            # Human player: unassign (they return to the unassigned list).
+            player.role_num = -1
+
+        await self._broadcast_lobby_state(session)
 
     async def _handle_assign_bot(self, content, session):
         if not self._is_owner(session):
