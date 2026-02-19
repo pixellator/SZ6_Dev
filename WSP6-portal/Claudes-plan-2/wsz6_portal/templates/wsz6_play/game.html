@@ -141,8 +141,9 @@
     const pauseBtn = document.getElementById('pause-btn');
     if (pauseBtn) pauseBtn.disabled = true;
     document.getElementById('turn-banner').innerHTML = '';
+    const lobbyUrl = '/play/join/' + SESSION_KEY + '/';
     const banner = document.getElementById('paused-banner');
-    banner.textContent = '⏸ Game paused at step ' + msg.step + '. Navigate to the lobby URL to resume.';
+    banner.innerHTML = '⏸ Game paused at step ' + msg.step + '. <a href="' + lobbyUrl + '">Go to lobby to resume.</a>';
     banner.style.display = 'block';
     setStatus('Game paused (checkpoint saved).');
   }

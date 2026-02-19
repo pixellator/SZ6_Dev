@@ -10,7 +10,7 @@
     {% if q %}<a href="?" class="btn">Clear</a>{% endif %}
   </form>
   <table>
-    <tr><th>Game</th><th>Owner</th><th>Status</th><th>Started</th><th>Ended</th></tr>
+    <tr><th>Game</th><th>Owner</th><th>Status</th><th>Started</th><th>Ended</th><th></th></tr>
     {% for s in sessions %}
     <tr>
       <td>{{ s.game.name }}</td>
@@ -18,9 +18,18 @@
       <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
       <td>{{ s.started_at|date:"Y-m-d H:i" }}</td>
       <td>{{ s.ended_at|date:"Y-m-d H:i"|default:"—" }}</td>
+      <td>
+        {% if s.status == 'open' %}
+          <a href="{% url 'wsz6_play:join' s.session_key %}" class="btn btn-sm btn-primary">Join</a>
+        {% elif s.status == 'in_progress' %}
+          <a href="{% url 'wsz6_play:join' s.session_key %}" class="btn btn-sm btn-success">Rejoin</a>
+        {% elif s.status == 'paused' %}
+          <a href="{% url 'wsz6_play:join' s.session_key %}" class="btn btn-sm btn-warning">Resume</a>
+        {% endif %}
+      </td>
     </tr>
     {% empty %}
-    <tr><td colspan="5">No sessions yet.</td></tr>
+    <tr><td colspan="6">No sessions yet.</td></tr>
     {% endfor %}
   </table>
 </div>
