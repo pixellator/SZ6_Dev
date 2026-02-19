@@ -137,8 +137,12 @@ fi
 # ---------------------------------------------------------------------------
 # Migrate
 # ---------------------------------------------------------------------------
-step "Running migrations"
+step "Running migrations (default / UARD database)"
 python manage.py migrate --run-syncdb 2>&1 | grep -E '(Apply|Unapply|OK|No migrations|Running|Creating)'
+ok
+
+step "Running migrations (gdm database — wsz6_play models)"
+python manage.py migrate wsz6_play --database gdm 2>&1 | grep -E '(Apply|Unapply|OK|No migrations|Running|Creating)'
 ok
 
 # ---------------------------------------------------------------------------
