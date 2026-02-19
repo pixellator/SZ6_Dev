@@ -55,6 +55,7 @@
     <button class="btn btn-primary btn-sm" onclick="sendHelp()" style="margin-left:.4rem;">? Help</button>
     {% if is_owner %}
     <button class="btn btn-secondary btn-sm" onclick="sendPause()" id="pause-btn" style="margin-left:.4rem;">⏸ Pause</button>
+    <button class="btn btn-success btn-sm" onclick="sendRematch()" id="rematch-btn" style="margin-left:.4rem; display:none;">↺ New Session with Same Players</button>
     {% endif %}
     <div id="help-msg" style="display:none; margin-top:.6rem; font-size:.85rem; color:#555;"></div>
   </div>
@@ -91,12 +92,13 @@
   // ── Message dispatch ─────────────────────────────────────────────
 
   function dispatch(msg) {
-    if      (msg.type === 'state_update')   onStateUpdate(msg);
-    else if (msg.type === 'transition_msg') onTransition(msg);
-    else if (msg.type === 'goal_reached')   onGoalReached(msg);
-    else if (msg.type === 'game_paused')    onGamePaused(msg);
-    else if (msg.type === 'help')           showHelp(msg.message);
-    else if (msg.type === 'error')          setStatus('⚠ ' + msg.message);
+    if      (msg.type === 'state_update')     onStateUpdate(msg);
+    else if (msg.type === 'transition_msg')   onTransition(msg);
+    else if (msg.type === 'goal_reached')     onGoalReached(msg);
+    else if (msg.type === 'game_paused')      onGamePaused(msg);
+    else if (msg.type === 'new_session_ready') onNewSessionReady(msg);
+    else if (msg.type === 'help')             showHelp(msg.message);
+    else if (msg.type === 'error')            setStatus('⚠ ' + msg.message);
   }
 
   function onStateUpdate(msg) {
@@ -132,6 +134,13 @@
     document.getElementById('undo-btn').disabled = true;
     const pauseBtn = document.getElementById('pause-btn');
     if (pauseBtn) pauseBtn.disabled = true;
+    const rematchBtn = document.getElementById('rematch-btn');
+    if (rematchBtn) rematchBtn.style.display = 'inline-block';
+  }
+
+  function onNewSessionReady(msg) {
+    setStatus('New session ready — redirecting to lobby…');
+    window.location.href = msg.lobby_url;
   }
 
   function onGamePaused(msg) {
@@ -201,6 +210,12 @@
       send({ type: 'request_pause' });
       document.getElementById('pause-btn').disabled = true;
     }
+  };
+
+  window.sendRematch = function() {
+    send({ type: 'request_rematch' });
+    const rematchBtn = document.getElementById('rematch-btn');
+    if (rematchBtn) rematchBtn.disabled = true;
   };
 
   function setStatus(msg) { document.getElementById('status-bar').textContent = msg; }

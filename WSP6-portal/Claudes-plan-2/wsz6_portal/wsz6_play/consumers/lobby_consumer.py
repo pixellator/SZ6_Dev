@@ -126,15 +126,14 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
         name    = user.username if is_auth else f"Guest-{uuid.uuid4().hex[:6]}"
         user_id = user.id if is_auth else None
 
-        # For paused sessions: if this authenticated user already has a role
-        # token in the RoleManager, restore it so their game URL stays valid
-        # when the game resumes.
-        if status == 'paused' and is_auth and user_id:
-            existing_token = None
-            for p in rm.get_all_players():
-                if p.user_id == user_id:
-                    existing_token = p.token
-                    break
+        # If this authenticated user already has a slot in the RoleManager
+        # (pre-assigned for a rematch, or preserved from a paused session),
+        # restore their existing token so their game URL stays valid.
+        if is_auth and user_id:
+            existing_token = next(
+                (p.token for p in rm.get_all_players() if p.user_id == user_id),
+                None,
+            )
             self.player_token = existing_token or rm.add_player(name, user_id=user_id)
         else:
             self.player_token = rm.add_player(name, user_id=user_id)
@@ -157,12 +156,15 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             return
         session = session_store.get_session(self.session_key)
         if session and session.get('role_manager'):
-            # Only remove the player while the game hasn't started yet.
-            # Once the game is in_progress (or paused) the GameConsumer still
-            # needs the player's token for authentication.
+            # Only remove unassigned players when the lobby is open.
+            # Pre-assigned players (e.g. rematch carry-over) keep their slot
+            # so their role is ready when they reconnect.
+            rm = session['role_manager']
             if session['status'] == 'lobby':
-                session['role_manager'].remove_player(self.player_token)
-                await self._broadcast_lobby_state(session)
+                player = rm.get_player(self.player_token)
+                if player is not None and player.role_num < 0:
+                    rm.remove_player(self.player_token)
+                    await self._broadcast_lobby_state(session)
         if hasattr(self, 'group_name'):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
