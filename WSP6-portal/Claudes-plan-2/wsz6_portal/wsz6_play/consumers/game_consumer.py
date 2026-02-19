@@ -208,6 +208,8 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         gdm_writer = session.get('gdm_writer')
         if gdm_writer:
             await gdm_writer.write_event('undo_applied', step=runner.step)
+        # Undo can land back on a bot's turn; trigger them if so.
+        await self._trigger_bots(session, runner)
 
     async def _handle_pause(self, session):
         if not self.is_owner:
@@ -335,72 +337,18 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         )
 
     # ----------------------------------------------------------------
-    # Bot triggering
+    # Bot triggering  (thin wrappers over module-level functions)
     # ----------------------------------------------------------------
 
     async def _trigger_bots(self, session, runner):
-        """Call maybe_move for any bot whose turn it is.  Loops until a
-        non-bot role is current or the game ends."""
-        bots = session.get('bots', [])
-        if not bots:
-            return
-
-        gdm_writer = session.get('gdm_writer')
-
-        for _ in range(20):   # safety limit
-            if runner.finished:
-                if gdm_writer:
-                    await self._on_game_ended(session, runner, gdm_writer,
-                                              _already_logged=True)
-                break
-
-            current_role = getattr(runner.current_state, 'current_role_num', -1)
-            did_move = False
-            for bot in bots:
-                op_index = await bot.maybe_move(runner, current_role)
-                if op_index is not None:
-                    if gdm_writer:
-                        op_name = _get_op_name(runner, op_index)
-                        await gdm_writer.write_event(
-                            'operator_applied',
-                            step=runner.step, op_index=op_index, op_name=op_name,
-                            args=None, role_num=bot.role_num,
-                        )
-                    did_move = True
-                    break   # re-evaluate after this bot's move
-
-            if not did_move:
-                break   # human's turn
-
-            if runner.finished:
-                await self._on_game_ended(session, runner, gdm_writer)
-                break
+        await trigger_bots_for_session(self.session_key)
 
     # ----------------------------------------------------------------
-    # Game-ended helper
+    # Game-ended helper  (thin wrapper over module-level function)
     # ----------------------------------------------------------------
 
     async def _on_game_ended(self, session, runner, gdm_writer, _already_logged=False):
-        """Write GDM events, update PlayThrough and UARD, close session."""
-        if not _already_logged and gdm_writer:
-            try:
-                goal_msg = runner.current_state.goal_message()
-            except Exception:
-                goal_msg = "Goal reached!"
-            await gdm_writer.write_event(
-                'game_ended',
-                outcome='goal_reached',
-                goal_message=goal_msg,
-                step=runner.step,
-            )
-
-        playthrough_id = session.get('playthrough_id', '')
-        if playthrough_id:
-            await push_playthrough_ended(playthrough_id, runner.step, 'completed')
-
-        summary = _build_summary(session, runner, 'completed')
-        await push_session_ended(self.session_key, summary)
-        session_store.update_session(self.session_key, {'status': 'ended'})
+        await _run_game_ended(self.session_key, session, runner, gdm_writer, _already_logged)
 
     # ----------------------------------------------------------------
     # Channel layer message handlers (called by group_send)
@@ -424,7 +372,86 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
 
 
 # ---------------------------------------------------------------------------
-# Module-level helpers
+# Module-level async helpers (also called by lobby_consumer at game start)
+# ---------------------------------------------------------------------------
+
+async def _run_game_ended(
+    session_key: str,
+    session: dict,
+    runner,
+    gdm_writer,
+    _already_logged: bool = False,
+) -> None:
+    """Write GDM events, update PlayThrough and UARD, mark session ended."""
+    if not _already_logged and gdm_writer:
+        try:
+            goal_msg = runner.current_state.goal_message()
+        except Exception:
+            goal_msg = "Goal reached!"
+        await gdm_writer.write_event(
+            'game_ended',
+            outcome='goal_reached',
+            goal_message=goal_msg,
+            step=runner.step,
+        )
+
+    playthrough_id = session.get('playthrough_id', '')
+    if playthrough_id:
+        await push_playthrough_ended(playthrough_id, runner.step, 'completed')
+
+    summary = _build_summary(session, runner, 'completed')
+    await push_session_ended(session_key, summary)
+    session_store.update_session(session_key, {'status': 'ended'})
+
+
+async def trigger_bots_for_session(session_key: str) -> None:
+    """Drive all pending bot moves for a session.
+
+    Loops until it is a human's turn or the game ends.  Safe to call with
+    ensure_future from lobby_consumer (when a bot goes first) or directly
+    from game_consumer after a human move or undo.
+    """
+    session = session_store.get_session(session_key)
+    if not session:
+        return
+    runner = session.get('game_runner')
+    bots   = session.get('bots', [])
+    if not runner or not bots:
+        return
+
+    gdm_writer = session.get('gdm_writer')
+
+    for _ in range(20):   # safety limit
+        if runner.finished:
+            await _run_game_ended(session_key, session, runner, gdm_writer,
+                                  _already_logged=True)
+            break
+
+        current_role = getattr(runner.current_state, 'current_role_num', -1)
+        did_move = False
+        for bot in bots:
+            op_index = await bot.maybe_move(runner, current_role)
+            if op_index is not None:
+                if gdm_writer:
+                    op_name = _get_op_name(runner, op_index)
+                    await gdm_writer.write_event(
+                        'operator_applied',
+                        step=runner.step, op_index=op_index, op_name=op_name,
+                        args=None, role_num=bot.role_num,
+                    )
+                did_move = True
+                break   # re-evaluate after this bot's move
+
+        if not did_move:
+            break   # human's turn (or no applicable ops)
+
+        if runner.finished:
+            await _run_game_ended(session_key, session, runner, gdm_writer)
+            break
+
+
+# ---------------------------------------------------------------------------
+# Module-level sync helpers
 # ---------------------------------------------------------------------------
 
 def _filter_ops_for_role(ops: list, role_num: int) -> list:

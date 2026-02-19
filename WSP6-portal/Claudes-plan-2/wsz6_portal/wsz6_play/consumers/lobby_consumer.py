@@ -371,6 +371,14 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
         # players haven't joined that group yet but the state is ready when they do).
         await runner.start()
 
+        # If the very first turn belongs to a bot, schedule its moves now.
+        # Uses ensure_future so game_starting redirects reach browsers first.
+        if bots:
+            initial_role = getattr(runner.current_state, 'current_role_num', -1)
+            if any(b.role_num == initial_role for b in bots):
+                from wsz6_play.consumers.game_consumer import trigger_bots_for_session
+                asyncio.ensure_future(trigger_bots_for_session(self.session_key))
+
         await self._broadcast_game_starting(rm)
 
     async def _resume_from_checkpoint(self, session):
@@ -427,6 +435,13 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
         # Broadcast the current state to the (empty) game group so it is
         # ready when players connect.
         await runner._broadcast_state()
+
+        # If the resumed state is a bot's turn, schedule their moves.
+        if bots:
+            current_role = getattr(runner.current_state, 'current_role_num', -1)
+            if any(b.role_num == current_role for b in bots):
+                from wsz6_play.consumers.game_consumer import trigger_bots_for_session
+                asyncio.ensure_future(trigger_bots_for_session(self.session_key))
 
         await self._broadcast_game_starting(rm)
 
