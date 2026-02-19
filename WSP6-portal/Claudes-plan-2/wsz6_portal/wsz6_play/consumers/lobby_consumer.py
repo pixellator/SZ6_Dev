@@ -138,8 +138,11 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             return
         session = session_store.get_session(self.session_key)
         if session and session.get('role_manager'):
-            session['role_manager'].remove_player(self.player_token)
+            # Only remove the player while the game hasn't started yet.
+            # Once the game is in_progress the GameConsumer still needs the
+            # player's token for authentication, so we must not delete it here.
             if session['status'] == 'lobby':
+                session['role_manager'].remove_player(self.player_token)
                 await self._broadcast_lobby_state(session)
         if hasattr(self, 'group_name'):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
