@@ -914,7 +914,13 @@
       const reg = findRegion(px, py);
       if (!reg) return;
       if (reg.op_index !== undefined) {
-        applyOp(reg.op_index, reg.op_args || undefined);
+        let args;
+        if (reg.send_click_coords) {
+          args = [Math.round(px), Math.round(py)];
+        } else {
+          args = reg.op_args || undefined;
+        }
+        applyOp(reg.op_index, args);
       } else if (reg.info) {
         showInfoPopup(e.clientX, e.clientY, reg.info);
       }

@@ -160,6 +160,24 @@ GAME_DEFS = [
         'min_players': 1,
         'max_players': 1,
     },
+    {
+        'slug':        'pixel-uw-aerial',
+        'name':        'Pixel Values with Old UW Aerial Image',
+        'pff_file':    'Pixel_Probe_SZ6.py',
+        'vis_file':    'Pixel_Probe_WSZ6_VIS.py',
+        'images_dir':  'UW_Aerial_images',
+        'source_dir':  'Vis-Features-Dev/game_sources',
+        'brief_desc':  (
+            'Click on an aerial photograph of the University of Washington '
+            'to read the pixel values at the clicked point. '
+            'The top half of the image reports RGB values; the bottom half '
+            'reports HSV values. '
+            'Demonstrates Tier-2 canvas regions on a raster JPEG with '
+            'dynamic coordinate capture and server-side Pillow image access.'
+        ),
+        'min_players': 1,
+        'max_players': 1,
+    },
 ]
 
 

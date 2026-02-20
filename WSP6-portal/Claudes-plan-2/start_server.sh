@@ -129,6 +129,7 @@ ${BOLD}${WHITE}
 ║  ${CYAN}TTT (Visual)${WHITE}  ${BASE_URL}/games/tic-tac-toe-vis/        ║
 ║  ${CYAN}Mt. Rainier${WHITE}   ${BASE_URL}/games/show-mt-rainier/        ║
 ║  ${CYAN}Click-Word${WHITE}    ${BASE_URL}/games/click-the-word/         ║
+║  ${CYAN}Pixel Probe${WHITE}   ${BASE_URL}/games/pixel-uw-aerial/        ║
 ║  ${CYAN}Django admin${WHITE}   ${BASE_URL}/admin/                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 ${RESET}
