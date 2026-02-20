@@ -2,7 +2,7 @@
 
 **Date:** 2026-02-19
 **Milestone:** M3 (Interactive Vis)
-**Status:** Tier 1 untested in production; Tier 2 tested with Click-the-Word demo.
+**Status:** Tier 1 untested in production; Tier 2 tested with Click-the-Word (SVG scene) and Pixel Probe (raster JPEG, dynamic coordinate capture).
 
 ---
 
@@ -162,8 +162,9 @@ handlers never accumulate.
 
 | Field | Type | Effect |
 |---|---|---|
-| `op_index` | integer | Left-click → `applyOp(op_index, op_args?)` |
-| `op_args` | any (optional) | Passed as `args` with the operator |
+| `op_index` | integer | Left-click → `applyOp(op_index, args?)` |
+| `op_args` | any (optional) | Passed as `args` with the operator (static value) |
+| `send_click_coords` | boolean (optional) | When `true` alongside `op_index`, forwards `[x, y]` natural-coordinate click position as `args` instead of `op_args`; used when the operator needs the exact pixel clicked |
 | `info` | string | Left-click (when no `op_index`) → info popup |
 | `context` | array of items | Right-click → context menu |
 | `hover_label` | string | Small tooltip near cursor while hovered |
@@ -413,10 +414,15 @@ order governs hit priority; `op_index` governs which operator fires.
 
 ---
 
-## Part 4 — Raster image variant (untested design)
+## Part 4 — Raster image variant (design proven by the Pixel Probe game)
 
 If the scene is a photograph or pre-rendered PNG/JPEG, the SVG is replaced
-by an `<img>` tag.  Everything else stays the same.
+by an `<img>` tag.  Everything else in the Tier-2 pipeline stays the same.
+This is exactly what the **Pixel Probe** game (`pixel-uw-aerial`) does: a
+1600 × 1035 aerial JPEG is displayed at 800 px wide, and two half-image
+regions forward the click coordinates to the server via `send_click_coords`.
+A full step-by-step walkthrough of that game appears in **Part 6**; the
+structural pattern is summarised here.
 
 ### Vis file structure
 
@@ -645,3 +651,377 @@ def render_state(state) -> str:
 
 No JSON manifest needed.  The CSS and JS in `game.html` handle everything
 from the `data-*` attributes.
+
+---
+
+## Part 6 — Walkthrough: "Pixel Values with Old UW Aerial Image"
+
+The Pixel Probe game (`pixel-uw-aerial` slug) extends the Tier-2 canvas
+system with a new capability: **dynamic coordinate capture**.  Unlike
+Click-the-Word, where the operator to invoke is determined entirely by
+*which* region the player clicks, Pixel Probe needs to know *where exactly*
+within the region the click landed.  The click coordinates are forwarded as
+operator arguments and used server-side to read a pixel from a JPEG via
+Pillow.
+
+### 6.1 The new `send_click_coords` manifest field
+
+Without `send_click_coords`, a region can only dispatch a fixed `op_args`
+value baked into the manifest at render time.  For coordinate capture we
+need the *runtime* click position.
+
+Adding `"send_click_coords": true` to a region tells `game.html`'s canvas
+click handler to substitute the actual natural-coordinate click point for
+`op_args`:
+
+```javascript
+// Inside setupHitCanvas() canvas 'click' listener (game.html):
+if (reg.op_index !== undefined) {
+    let args;
+    if (reg.send_click_coords) {
+        args = [Math.round(px), Math.round(py)];  // live click position
+    } else {
+        args = reg.op_args || undefined;           // static value (existing)
+    }
+    applyOp(reg.op_index, args);
+}
+```
+
+`px` and `py` are already in natural scene coordinates — `scalePoint()`
+divides the viewport click by `canvas.getBoundingClientRect().width` and
+multiplies by `scene_width`.  So `args` arriving at the server are always
+in the same pixel space as the PIL `getpixel()` call, regardless of window
+size.
+
+### 6.2 Server-side image access with Pillow
+
+The transition functions read the installed JPEG using Pillow.  The image
+is decoded once per process and cached in a module-level variable:
+
+```python
+import os
+from PIL import Image
+import colorsys
+
+_GAME_DIR  = os.path.dirname(os.path.abspath(__file__))
+_IMAGE_REL = os.path.join('UW_Aerial_images', 'Aeroplane-view-of-UW.jpg')
+_IMG_CACHE = None
+
+def _get_image():
+    global _IMG_CACHE
+    if _IMG_CACHE is None:
+        path = os.path.join(_GAME_DIR, _IMAGE_REL)
+        _IMG_CACHE = Image.open(path).convert('RGB')
+    return _IMG_CACHE
+```
+
+`__file__` in the installed copy resolves to
+`games_repo/pixel-uw-aerial/Pixel_Probe_SZ6.py`, so `_GAME_DIR` is the
+installed directory.  The `images_dir` field in `install_test_game.py`
+copies `UW_Aerial_images/` alongside the PFF, so the relative path always
+resolves correctly.
+
+Coordinate clamping guards against any edge-case out-of-bounds click:
+
+```python
+def _read_rgb(x, y):
+    img = _get_image()
+    x = max(0, min(x, img.width  - 1))
+    y = max(0, min(y, img.height - 1))
+    return img.getpixel((x, y))    # (r, g, b)
+```
+
+Python's `colorsys` module works in `[0.0, 1.0]`; we scale to degrees /
+percent for readability:
+
+```python
+def _rgb_to_hsv(r, g, b):
+    h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    return round(h * 360), round(s * 100), round(v * 100)
+```
+
+### 6.3 State class
+
+The state holds only the most recent probe result plus a running count.
+`is_goal()` permanently returns `False` — this is an open-ended exploration
+game that the player ends voluntarily.
+
+```python
+class PixelProbe_State(sz.SZ_State):
+    def __init__(self, old=None):
+        if old is None:
+            self.last_x           = None   # most recently probed x
+            self.last_y           = None   # most recently probed y
+            self.last_result      = None   # e.g. "RGB = (120, 85, 45)"
+            self.click_count      = 0
+            self.current_role_num = 0
+        else:
+            self.last_x           = old.last_x
+            self.last_y           = old.last_y
+            self.last_result      = old.last_result
+            self.click_count      = old.click_count
+            self.current_role_num = old.current_role_num
+
+    def is_goal(self):
+        return False
+```
+
+### 6.4 Transition helpers
+
+Both operators copy state, read the pixel, set `jit_transition`, and return
+the new state.  Notice the function signature is `(state, args)` — two
+positional parameters — because `game_runner` passes `args` when
+`bool(op.params)` is `True` (see §6.5).
+
+```python
+def _probe_rgb(state, args):
+    x, y = int(args[0]), int(args[1])
+    r, g, b = _read_rgb(x, y)
+    ns = PixelProbe_State(old=state)
+    ns.last_x      = x
+    ns.last_y      = y
+    ns.last_result = f'RGB = ({r}, {g}, {b})'
+    ns.click_count = state.click_count + 1
+    ns.jit_transition = f'x={x}, y={y}  →  RGB = ({r}, {g}, {b})'
+    return ns
+
+def _probe_hsv(state, args):
+    x, y = int(args[0]), int(args[1])
+    r, g, b = _read_rgb(x, y)
+    h, s, v = _rgb_to_hsv(r, g, b)
+    ns = PixelProbe_State(old=state)
+    ns.last_x      = x
+    ns.last_y      = y
+    ns.last_result = f'HSV = ({h}°, {s}%, {v}%)'
+    ns.click_count = state.click_count + 1
+    ns.jit_transition = f'x={x}, y={y}  →  HSV = ({h}°, {s}%, {v}%)'
+    return ns
+```
+
+`jit_transition` is broadcast to all clients as a `transition_msg`
+WebSocket event — the same mechanism used by Click-the-Word for its
+"Correct!" feedback.
+
+### 6.5 Operators and the `params` mechanic
+
+`game_runner.py` decides how to call `state_xition_func` based on whether
+the operator has a non-empty `params` list:
+
+```python
+# game_runner.py (lines ~120–125):
+if bool(getattr(op, 'params', None)):
+    new_state = op.state_xition_func(state, args)   # args forwarded
+else:
+    new_state = op.state_xition_func(state)          # args dropped silently
+```
+
+For Pixel Probe the operators genuinely take (x, y) parameters, so
+`_COORD_PARAMS` is semantically correct — not a workaround:
+
+```python
+_COORD_PARAMS = [
+    {'name': 'x', 'type': 'int', 'min': 0, 'max': 1599},
+    {'name': 'y', 'type': 'int', 'min': 0, 'max': 1034},
+]
+
+class PixelProbe_Operator_Set(sz.SZ_Operator_Set):
+    def __init__(self):
+        self.operators = [
+            sz.SZ_Operator(
+                name='Probe pixel — RGB (top half)',
+                precond_func=lambda s: True,
+                state_xition_func=_probe_rgb,
+                params=_COORD_PARAMS,
+            ),
+            sz.SZ_Operator(
+                name='Probe pixel — HSV (bottom half)',
+                precond_func=lambda s: True,
+                state_xition_func=_probe_hsv,
+                params=_COORD_PARAMS,
+            ),
+        ]
+```
+
+A player who clicks an operator *button* (rather than the image) will see a
+two-field x/y form — a useful fallback for accessibility or debugging.
+
+**Rule:** any operator whose region carries `send_click_coords: true` must
+have a non-empty `params` list.  If `params` is empty or absent, `game_runner`
+silently drops `args` and the transition function receives only `state`.
+
+### 6.6 Formulation wiring
+
+Identical pattern to Click-the-Word:
+
+```python
+class PixelProbe_Formulation(sz.SZ_Formulation):
+    def __init__(self):
+        self.metadata    = PixelProbe_Metadata()
+        self.operators   = PixelProbe_Operator_Set()
+        self.roles_spec  = PixelProbe_Roles_Spec()   # single "Visitor" role
+        self.common_data = sz.SZ_Common_Data()
+        self.vis_module  = _pixel_vis                 # import at top
+
+    def initialize_problem(self, config={}):
+        initial = PixelProbe_State()
+        self.instance_data = sz.SZ_Problem_Instance_Data(
+            d={'initial_state': initial}
+        )
+        return initial
+
+PIXEL_PROBE = PixelProbe_Formulation()    # module-level entry point
+```
+
+### 6.7 The vis module: `render_state`
+
+`render_state` returns five pieces of HTML, concatenated:
+
+```
+[result bar]        ← monospace probe result, or placeholder on first render
+[top-half label]    ← "▲ TOP HALF — click for RGB values"
+[#wsz6-scene div]   ← <img> tag + purely-visual dashed divider overlay
+[bottom-half label] ← "▼ BOTTOM HALF — click for HSV values"
+[<script wsz6-regions>]
+[hint text]
+```
+
+#### The scene container (raster JPEG)
+
+```python
+_IMG_URL   = '/play/game-asset/pixel-uw-aerial/UW_Aerial_images/Aeroplane-view-of-UW.jpg'
+_IMG_W     = 1600
+_IMG_H     = 1035
+_DISPLAY_W = 800    # CSS max-width — the image is shown at 50 % of natural size
+
+divider_html = (
+    '<div style="position:absolute; top:0; left:0; '
+    'width:100%; height:50%; '
+    'border-bottom:2px dashed rgba(255,255,0,0.65); '
+    'pointer-events:none; box-sizing:border-box;"></div>'
+)
+
+scene_html = (
+    '<div id="wsz6-scene" '
+    'style="position:relative; display:inline-block; line-height:0;">'
+    f'<img src="{_IMG_URL}" width="{_IMG_W}" height="{_IMG_H}" '
+    f'style="display:block; max-width:{_DISPLAY_W}px; height:auto;">'
+    + divider_html
+    + '</div>'
+)
+```
+
+Two differences from the SVG-scene container in Part 3:
+
+1. **`position:relative`** is set explicitly — needed because the dashed
+   divider uses `position:absolute`.  (`setupHitCanvas()` also sets this
+   automatically for the canvas overlay.)
+2. **`max-width / height:auto`** on the `<img>` — the image is *displayed*
+   at 800 px but *described* to `setupHitCanvas()` at 1600 × 1035.  The
+   canvas is drawn at full natural resolution and CSS-scaled to fill the
+   container, so click coordinates from `scalePoint()` are already in
+   natural image space.
+
+#### The dashed divider
+
+The divider is a `position:absolute` `<div>` covering the top 50 % of the
+container with a yellow dashed `border-bottom`.  `pointer-events:none`
+ensures it does not block the transparent canvas overlay above it.  Because
+it is purely decorative CSS, it appears immediately on page load — before
+any JS runs — and does not interfere with the hit-test geometry.
+
+#### The region manifest with `send_click_coords`
+
+```python
+_HALF_Y = _IMG_H // 2   # = 517
+
+_MANIFEST = {
+    "container_id": "wsz6-scene",
+    "scene_width":  _IMG_W,    # 1600 — natural coords, NOT display width
+    "scene_height": _IMG_H,    # 1035
+    "regions": [
+        {
+            "op_index":          0,
+            "shape":             "rect",
+            "x": 0, "y": 0, "w": _IMG_W, "h": _HALF_Y,
+            "send_click_coords": True,
+            "hover_label":       "Click to probe RGB",
+        },
+        {
+            "op_index":          1,
+            "shape":             "rect",
+            "x": 0, "y": _HALF_Y, "w": _IMG_W, "h": _IMG_H - _HALF_Y,
+            "send_click_coords": True,
+            "hover_label":       "Click to probe HSV",
+        },
+    ],
+}
+```
+
+The two regions tile the whole image with no overlap, so array ordering
+does not matter for hit priority.  What matters is that **both carry
+`send_click_coords: true`**, which causes the client to forward `[x, y]`
+(in natural image pixels) instead of a static `op_args`.
+
+`scene_width` and `scene_height` are set to the **natural image dimensions**
+(1600 × 1035), not the CSS display size (800 × ~517).  This ensures that
+the coordinate space the canvas uses for hit testing matches the coordinate
+space that PIL's `getpixel()` expects.
+
+### 6.8 What the client does — step by step
+
+1. Server sends `state_update` with `vis_html` from `render_state`.
+2. `game.html` injects `vis_html` and calls `setupHitCanvas()`.
+3. A `<canvas width="1600" height="1035">` overlay is created and
+   CSS-scaled to fill the 800 px container (`width:100%; height:100%;
+   position:absolute; top:0; left:0`).
+4. User moves the mouse over the canvas:
+   - `scalePoint(e.clientX, e.clientY)` converts viewport position to
+     natural image coordinates.
+   - First matching region is highlighted with a translucent gold fill.
+   - Tooltip shows "Click to probe RGB" or "Click to probe HSV".
+5. User clicks (say at viewport position that maps to `[432, 280]`):
+   - Hit test identifies the top-half region (`y=280 < 517`).
+   - `send_click_coords` is `true`, so `args = [432, 280]`.
+   - `applyOp(0, [432, 280])` sends
+     `{type: "apply_operator", op_index: 0, args: [432, 280]}`
+     over WebSocket.
+6. Server receives `apply_operator`.  `op.params` is non-empty, so
+   `game_runner` calls `_probe_rgb(state, [432, 280])`.
+7. `_probe_rgb` reads `img.getpixel((432, 280))` → e.g. `(142, 128, 98)`.
+8. New state returned with
+   `jit_transition = "x=432, y=280  →  RGB = (142, 128, 98)"`.
+9. Engine broadcasts the transition message; then sends a new `state_update`
+   with updated `vis_html` showing the result bar updated to
+   `x=432, y=280 → RGB = (142, 128, 98)`.
+10. `game.html` injects the new `vis_html` and rebuilds the canvas overlay.
+
+### 6.9 Installation notes
+
+The JPEG must be served by the game-asset endpoint.  In `install_test_game.py`:
+
+```python
+{
+    'slug':        'pixel-uw-aerial',
+    'name':        'Pixel Values with Old UW Aerial Image',
+    'pff_file':    'Pixel_Probe_SZ6.py',
+    'vis_file':    'Pixel_Probe_WSZ6_VIS.py',
+    'images_dir':  'UW_Aerial_images',          # ← copies the image folder
+    'source_dir':  'Vis-Features-Dev/game_sources',
+    'brief_desc':  '...',
+    'min_players': 1,
+    'max_players': 1,
+},
+```
+
+The installer copies `UW_Aerial_images/Aeroplane-view-of-UW.jpg` into
+`games_repo/pixel-uw-aerial/UW_Aerial_images/`, which is exactly where
+`_GAME_DIR + _IMAGE_REL` resolves at runtime.
+
+Verify Pillow is available before running:
+
+```bash
+python -c "from PIL import Image; print(Image.__version__)"
+# → 12.1.1  (or similar)
+```
+
+If absent: `pip install Pillow`.
