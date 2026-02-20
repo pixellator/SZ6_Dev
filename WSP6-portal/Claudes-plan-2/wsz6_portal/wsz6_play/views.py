@@ -1,9 +1,17 @@
 """wsz6_play/views.py  –  HTTP views for the play component."""
 
+import mimetypes
+import os
+from pathlib import Path
+
 from django.contrib.auth.decorators import login_required
+from django.http import FileResponse, Http404
 from django.shortcuts import redirect, render
 
 from wsz6_play import session_store
+
+# File extensions that may be served as game assets.
+_ALLOWED_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico'}
 
 
 @login_required
@@ -58,6 +66,59 @@ def game_page(request, session_key, role_token):
         'ws_url':      f'/ws/game/{sk}/{role_token}/',
         'is_owner':    is_owner,
     })
+
+
+@login_required
+def game_asset(request, game_slug, filename):
+    """Serve a static asset (image) from a game's installed directory.
+
+    URL: /play/game-asset/<game_slug>/<path:filename>
+
+    Security:
+      - Path traversal is blocked: the resolved path must remain inside
+        the game directory.
+      - Only image file extensions are served; all others return 404.
+      - Requires login (assets are only needed during an active session).
+
+    Caching:
+      - Sends Cache-Control: public, max-age=86400 so the browser caches
+        images across moves (important for games with many image assets).
+    """
+    from wsz6_admin.games_catalog.models import Game
+
+    # Look up the game directory via the database record.
+    try:
+        game = Game.objects.get(slug=game_slug)
+    except Game.DoesNotExist:
+        raise Http404(f"No game with slug '{game_slug}'.")
+
+    if not game.pff_path:
+        raise Http404("Game has no asset directory configured.")
+
+    # Resolve and validate the requested path.
+    game_dir  = os.path.realpath(game.pff_path)
+    requested = os.path.realpath(os.path.join(game_dir, filename))
+
+    # Block path traversal: resolved path must be strictly inside game_dir.
+    try:
+        Path(requested).relative_to(game_dir)
+    except ValueError:
+        raise Http404("Invalid asset path.")
+
+    # Only serve image file types.
+    ext = os.path.splitext(requested)[1].lower()
+    if ext not in _ALLOWED_IMAGE_EXTS:
+        raise Http404("File type not permitted.")
+
+    if not os.path.isfile(requested):
+        raise Http404("Asset not found.")
+
+    content_type, _ = mimetypes.guess_type(requested)
+    content_type = content_type or 'application/octet-stream'
+
+    response = FileResponse(open(requested, 'rb'), content_type=content_type)
+    response['Cache-Control'] = 'public, max-age=86400'
+    return response
 
 
 def echo_test_page(request):

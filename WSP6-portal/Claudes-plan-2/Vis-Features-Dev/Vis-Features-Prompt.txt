@@ -1,0 +1,156 @@
+Vis-Features-Prompt.txt
+
+The original prompt to come up with a development plan for
+WSZ6-portal did not say much about the old SOLUZION5 visual
+affordances in games or how they should be enhanced in
+SOLUZION6.  This prompt seeks to remedy that, and it asks
+for development plan for building out the visualization
+and releated affordances of the WSZ6-play component of the
+portal.
+
+The first point to understand is that SOLUZION6 is intended
+to supercede SOLUZION5 by including all the special affordances
+for players that are in SOLUZION5 but increase the support for
+even richer player experiences. The best SOLUZION5 affordances
+were implemented last year in the Web_SOLUZION5 system (which
+used a single Flask-based server).  Notable features were:
+
+1. A game's visualizations were provided using a Python file
+that implemented a render_state(current_state) method, which
+returned a text string representing an SVG object.
+ (In SOLUZION6 this will be changed so that any HTML code
+ can be returned, not just SVG.)
+
+The visualization Python file was associated with the game's
+problem formulation file by having the same file-name prefix,
+but having a suffix "_SVG_VIS_FOR_BRIFL" before the ".py".
+
+ (In SOLUZION6, let's use the suffix "_WSZ6_VIS")
+
+2. The vis files, as we can call them, produced graphics to
+represent the current state.  They did not allow much interaction
+with the visualization.  There was no support for animations,
+clicking on the graphic to get more information about the current
+state, or way to activate operators by clicking on the state vis
+(rather than clicking operator buttons that are provided anyway).
+
+ (In SOLUZION6, we'd like to make it easy for game implementers
+ to allow players to click on the state graphic either to get
+ more information or to activate a game operator instead of
+ clicking on the operator's button.  In addition, it should be
+ possible to define a parameterized operator that when applied
+ will capture the (relative) coordinates of the mouse or pointer
+ in part of the graphic and send them as parameter values.)
+
+3. Web_SOLUZION5 allowed a player who is looking at the screen
+ with the normal state visualization to click a "Full Screen"
+ button to have the visualization shown in a full-screen mode
+ that hid the normal operator buttons, showing them at the
+ bottom of the full screen only if the player's pointer hovered
+ nearby.  The full-screen mode logic figured out how best to
+ resize the graphic to take full advantage of screen real estate
+ and hide any pixels representing non-current-state stuff on
+ the screen.  The player could use the Esc key to go back to
+ normal visualization mode.  The player could remain in full
+ screen mode for the entire game if they wished, however.
+
+4. Web_SOLUZION5 also provided an option to toggle the display
+ of the visualization between the current state's visualization
+ and the previous state's visualization.  This was helpful in
+ games where it was otherwise difficult to see the effects of
+ some operators.
+
+   SOLUZION6 should carry this feature forward.  It was not
+   available in full-screen mode in SOLUZION5, but perhaps
+   it could be, somehow, in SOLUZION6.
+
+5. The game-play screen in Web_SOLUZION5 showed not only the
+ current state's visualization, the currently available
+ operators, and the latest transition message, but it contained
+ a drop-down display of the entire transition-message history
+ for the game.  Having this persistently shown avoided a problem
+ that I see with the current (Feb. 19, 2026 at 3:30 PM)
+ WSZ6-play interface: The transition message is shown for a few
+ seconds and then is removed from the page. Not only is this
+ bad if the player was reading it at the time of removal,
+ it causes the layout of the rest of the page to jump in an
+ annoying manner.  Having the transition message persistent
+ avoids this.  Also, by having the transition messages history
+ always available, the ability of the game to tell a story
+ becomes more apparent to players and game designers alike.
+
+ So the transition history feature should be carried over in
+ WSZ6-play.  While the current message should be styled in
+ a manner that can be controlled by game designers, in the
+ history, the items can be plain text.  When the player
+ selects an item from the history, it can be shown as its
+ original styline specified.
+
+6. In Web_SOLUZION5, visualizations of states tended to always
+ change abruptly or the opposite, if the game designers created
+ rather uniform visualizations for different states.
+
+  In SOLUZION6, it would be nice to have some easy options for
+ visual transitions between state visualizations, such as cross
+ fade, keyframe-animation (perhaps specified with SVG) or
+ other effect that one might see in, e.g., Powerpoint presentations.
+
+7. In the past, SOLUZION did not support the playing of audio
+ either as a function of the current state or as a function of
+ the latest transition.  That should be supported.  One option
+ should be to play an audio file. Another should be to read
+ certain parts of the transition message with voice synthesis.
+
+8. A key part of SOLUZION visualizations is their ability to
+ include images that come from files that are resources in the
+ game folder (and in the Zip file used for installing the games).
+ In Web_SOLUZION5, a feature of the Python svgwrite package was
+ typically used by game designers/implementers to use the images
+ in state visualizations.
+
+ In WSZ6-play, we should still allow the use of svgwrite, but there
+ are probably more options that would work better.  Since we are
+ supporting online games with a client-server architecture, it
+ would make sense to facilitate the caching of images that will be
+ used repeatedly in state visualizations in a game.
+
+9. Finally, the debugging of game visualizations is a big job that
+ deserves support from the system.  Helping a designer iterate
+ quickly on details such as the positioning of a graphical component
+ on the player's screen, and under different browser conditions,
+ would be great.  Web_SOLUZION5 had a vis-debug mode that could
+ be enabled within a problem-formulation file, such that when
+ a game was started, the server would automatically open browser
+ tabs for up to 3 players, and show the initial state (or take
+ a few moves first) for each player.  This was very helpful to
+ students who were designing visualizations for their games.
+
+ Such a vis-debug mode should also be supported by WSZ6-play.
+
+
+In order to develop all this visualization and game-play
+functionality in WSZ6-play, there are three different activities
+we might be doing ...
+
+a. reading existing code files that have just been developed
+to get the current WSZ6-play functionality with shows ASCII
+representations of states but doesn't use VIS files to get
+state-visualization graphics.
+
+b. read visualization files for problems and games developed
+for SOLUZION5, but which could benefit from new features.
+
+c. construct new visualization files for problem formulations
+that will be good test cases for the visualization features of
+WSZ6-play.
+
+d. implement the features described above.
+
+e. test the new features and visualizations.
+
+What would you propose as a mix of these activities?
+What would be appropriate milestones?
+What's a good detailed plan for meeting these milestones?
+
+Please create a VIS_DEV_PLAN.md document with your
+answers to these three questions.

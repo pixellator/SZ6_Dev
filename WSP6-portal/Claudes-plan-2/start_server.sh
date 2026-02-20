@@ -126,14 +126,21 @@ ${BOLD}${WHITE}
 ║  ${CYAN}Dashboard${WHITE}      ${BASE_URL}/dashboard/                   ║
 ║  ${CYAN}Games list${WHITE}     ${BASE_URL}/games/                        ║
 ║  ${CYAN}Tic-Tac-Toe${WHITE}   ${BASE_URL}/games/tic-tac-toe/            ║
+║  ${CYAN}TTT (Visual)${WHITE}  ${BASE_URL}/games/tic-tac-toe-vis/        ║
+║  ${CYAN}Mt. Rainier${WHITE}   ${BASE_URL}/games/show-mt-rainier/        ║
 ║  ${CYAN}Django admin${WHITE}   ${BASE_URL}/admin/                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 ${RESET}
-${DIM}Phase 2 test flow:${RESET}
+${DIM}Test flow (text version):${RESET}
   Browser A  →  log in as ${BOLD}owner1${RESET}, open Tic-Tac-Toe, click "New Session"
   Browser B  →  log in as ${BOLD}player1${RESET}, paste the lobby URL
   owner1 assigns roles (X / O) → clicks "Start Game" → play to end
-  Verify GDM log: ${DIM}SZ6_Dev/gdm/tic-tac-toe/sessions/<key>/playthroughs/<id>/log.jsonl${RESET}
+
+${DIM}Test flow (visual version — M1):${RESET}
+  Browser A  →  log in as ${BOLD}owner1${RESET}, open ${CYAN}Tic-Tac-Toe (Visual)${RESET}, click "New Session"
+  Browser B  →  log in as ${BOLD}player1${RESET}, paste the lobby URL
+  owner1 assigns roles (X / O) → clicks "Start Game"
+  Board should render as SVG (coloured X / O on a 3×3 grid).
 
 PANEL
 

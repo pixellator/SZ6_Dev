@@ -224,13 +224,30 @@ class GameRunner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _broadcast_state(self) -> None:
+    async def build_state_payload(self) -> dict:
+        """Build a complete ``state_update`` payload for the current state.
+
+        Used by both ``_broadcast_state`` (group broadcast) and the
+        ``GameConsumer.connect`` handler (direct send to a new connection),
+        so that both paths include ``vis_html`` when a vis module is present.
+        """
         state    = self.current_state
         ops_info = self.get_ops_info(state)
         try:
             at_goal = state.is_goal()
         except Exception:
             at_goal = False
+
+        # Optional visualization.  Runs in a thread in case future vis files
+        # do I/O.  Any exception leaves vis_html=None → text fallback.
+        vis_html   = None
+        vis_module = getattr(self.formulation, 'vis_module', None)
+        if vis_module is not None and callable(getattr(vis_module, 'render_state', None)):
+            try:
+                vis_html = await asyncio.to_thread(vis_module.render_state, state)
+            except Exception:
+                logger.exception("vis_module.render_state() failed at step %s", self.step)
+
         payload = {
             'type':             'state_update',
             'step':             self.step,
@@ -241,4 +258,10 @@ class GameRunner:
             'operators':        ops_info,
             'current_role_num': getattr(state, 'current_role_num', 0),
         }
+        if vis_html is not None:
+            payload['vis_html'] = vis_html
+        return payload
+
+    async def _broadcast_state(self) -> None:
+        payload = await self.build_state_payload()
         await self.broadcast(payload)

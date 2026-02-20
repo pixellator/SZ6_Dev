@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="pm-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#1565c0"/>
+      <stop offset="100%" stop-color="#90caf9"/>
+    </linearGradient>
+    <linearGradient id="pm-meadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#66bb6a"/>
+      <stop offset="100%" stop-color="#33691e"/>
+    </linearGradient>
+    <linearGradient id="pm-snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e3f2fd"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="600" height="400" fill="url(#pm-sky)"/>
+
+  <!-- Distant mountain (smaller, background) -->
+  <polygon points="300,60 230,145 370,145" fill="url(#pm-snow)"/>
+  <!-- Rock band below snow -->
+  <polygon points="230,145 210,170 390,170 370,145" fill="#90a4ae"/>
+
+  <!-- Mid-ground ridge / tree line -->
+  <polygon points="0,170 60,155 120,162 180,150 240,158 300,148
+                   360,156 420,150 480,160 540,155 600,162 600,210 0,210"
+           fill="#388e3c"/>
+
+  <!-- Tree shapes on ridgeline -->
+  <polygon points=" 40,170  50,148  60,170" fill="#2e7d32"/>
+  <polygon points=" 85,168  96,143 107,168" fill="#2e7d32"/>
+  <polygon points="155,165 167,140 179,165" fill="#2e7d32"/>
+  <polygon points="210,162 222,138 234,162" fill="#2e7d32"/>
+  <polygon points="350,158 362,135 374,158" fill="#2e7d32"/>
+  <polygon points="400,160 412,136 424,160" fill="#2e7d32"/>
+  <polygon points="460,162 472,140 484,162" fill="#2e7d32"/>
+  <polygon points="530,162 542,140 554,162" fill="#2e7d32"/>
+
+  <!-- Main meadow -->
+  <rect x="0" y="200" width="600" height="200" fill="url(#pm-meadow)"/>
+
+  <!-- Winding path through meadow -->
+  <path d="M 280,400 C 290,360 310,330 300,300 C 290,275 305,255 300,230"
+        fill="none" stroke="#a1887f" stroke-width="6" opacity="0.7"/>
+
+  <!-- Wildflower patches — various colours -->
+  <!-- Red/magenta (Indian paintbrush) -->
+  <circle cx="80"  cy="250" r="4" fill="#e53935"/>
+  <circle cx="95"  cy="260" r="5" fill="#ef5350"/>
+  <circle cx="70"  cy="270" r="3" fill="#e91e63"/>
+  <circle cx="110" cy="255" r="4" fill="#e53935"/>
+  <circle cx="88"  cy="280" r="5" fill="#f06292"/>
+
+  <!-- Yellow (glacier lilies) -->
+  <circle cx="160" cy="240" r="4" fill="#fdd835"/>
+  <circle cx="175" cy="255" r="5" fill="#ffee58"/>
+  <circle cx="148" cy="262" r="3" fill="#fdd835"/>
+  <circle cx="190" cy="248" r="4" fill="#ffca28"/>
+  <circle cx="165" cy="275" r="5" fill="#fdd835"/>
+
+  <!-- Purple (lupine) -->
+  <circle cx="450" cy="245" r="5" fill="#7b1fa2"/>
+  <circle cx="467" cy="258" r="4" fill="#9c27b0"/>
+  <circle cx="435" cy="260" r="3" fill="#8e24aa"/>
+  <circle cx="480" cy="248" r="5" fill="#7b1fa2"/>
+  <circle cx="455" cy="272" r="4" fill="#ab47bc"/>
+
+  <!-- White (bistort / anemone) -->
+  <circle cx="330" cy="300" r="4" fill="#f5f5f5"/>
+  <circle cx="348" cy="315" r="5" fill="#ffffff"/>
+  <circle cx="315" cy="318" r="3" fill="#eeeeee"/>
+  <circle cx="365" cy="305" r="4" fill="#f5f5f5"/>
+
+  <!-- Scattered small flowers everywhere -->
+  <circle cx="220" cy="310" r="3" fill="#fdd835"/>
+  <circle cx="240" cy="330" r="3" fill="#ef5350"/>
+  <circle cx="130" cy="350" r="3" fill="#7b1fa2"/>
+  <circle cx="500" cy="320" r="3" fill="#fdd835"/>
+  <circle cx="520" cy="345" r="3" fill="#f06292"/>
+  <circle cx="55"  cy="340" r="3" fill="#ffca28"/>
+  <circle cx="560" cy="300" r="3" fill="#9c27b0"/>
+  <circle cx="35"  cy="290" r="3" fill="#e53935"/>
+
+  <!-- Subtle clouds -->
+  <ellipse cx="140" cy="45" rx="60" ry="18" fill="white" opacity="0.4"/>
+  <ellipse cx="480" cy="38" rx="55" ry="15" fill="white" opacity="0.35"/>
+</svg>

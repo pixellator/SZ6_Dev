@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="rl-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#1a237e"/>
+      <stop offset="60%"  stop-color="#5c9dd8"/>
+      <stop offset="100%" stop-color="#90caf9"/>
+    </linearGradient>
+    <linearGradient id="rl-water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#90caf9"/>
+      <stop offset="100%" stop-color="#1565c0"/>
+    </linearGradient>
+    <linearGradient id="rl-snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#ddeeff"/>
+    </linearGradient>
+    <linearGradient id="rl-bank" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#558b2f"/>
+      <stop offset="100%" stop-color="#33691e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="600" height="400" fill="url(#rl-sky)"/>
+
+  <!-- Mountain above the lake (real) -->
+  <polygon points="300,30 215,155 385,155" fill="url(#rl-snow)"/>
+  <!-- Rock band -->
+  <polygon points="215,155 195,180 405,180 385,155" fill="#8fa8b5"/>
+
+  <!-- Left tree line -->
+  <polygon points="0,180 0,210 120,210 160,185 120,175  80,168  40,160" fill="#2e7d32"/>
+  <polygon points="0,190 20,165 40,190" fill="#1b5e20"/>
+  <polygon points="30,188 50,160 70,188" fill="#1b5e20"/>
+  <polygon points="65,185 85,158 105,185" fill="#1b5e20"/>
+
+  <!-- Right tree line -->
+  <polygon points="600,180 600,210 480,210 440,185 480,175 520,168 560,160" fill="#2e7d32"/>
+  <polygon points="600,188 580,162 560,188" fill="#1b5e20"/>
+  <polygon points="570,185 550,158 530,185" fill="#1b5e20"/>
+  <polygon points="535,182 515,158 495,182" fill="#1b5e20"/>
+
+  <!-- Grassy banks meeting the water -->
+  <ellipse cx="300" cy="210" rx="300" ry="18" fill="url(#rl-bank)"/>
+
+  <!-- Lake surface -->
+  <ellipse cx="300" cy="270" rx="270" ry="80" fill="url(#rl-water)"/>
+
+  <!-- Mountain reflection in water (inverted, lighter) -->
+  <polygon points="300,218 230,295 370,295" fill="#b3d9f5" opacity="0.85"/>
+  <!-- Rock reflection -->
+  <polygon points="230,295 215,310 385,310 370,295" fill="#a0bec8" opacity="0.7"/>
+
+  <!-- Water shimmer ripples -->
+  <ellipse cx="300" cy="270" rx="200" ry="8" fill="none" stroke="#c8e6fa" stroke-width="1.5" opacity="0.5"/>
+  <ellipse cx="300" cy="290" rx="230" ry="8" fill="none" stroke="#c8e6fa" stroke-width="1"   opacity="0.4"/>
+  <ellipse cx="300" cy="250" rx="160" ry="6" fill="none" stroke="#c8e6fa" stroke-width="1"   opacity="0.4"/>
+
+  <!-- Foreground grassy shore -->
+  <rect x="0" y="340" width="600" height="60" fill="#33691e"/>
+  <!-- Shore detail -->
+  <ellipse cx="80"  cy="345" rx="30" ry="8" fill="#388e3c"/>
+  <ellipse cx="520" cy="348" rx="28" ry="7" fill="#388e3c"/>
+
+  <!-- Subtle clouds -->
+  <ellipse cx="120" cy="55" rx="55" ry="16" fill="white" opacity="0.3"/>
+  <ellipse cx="490" cy="48" rx="48" ry="14" fill="white" opacity="0.28"/>
+</svg>

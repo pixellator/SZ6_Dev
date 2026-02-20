@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="sv-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#0d3b7a"/>
+      <stop offset="70%"  stop-color="#4a90d9"/>
+      <stop offset="100%" stop-color="#a8d4f5"/>
+    </linearGradient>
+    <linearGradient id="sv-snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#f5f9ff"/>
+      <stop offset="100%" stop-color="#cde4f5"/>
+    </linearGradient>
+    <linearGradient id="sv-rock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#8fa8b5"/>
+      <stop offset="100%" stop-color="#546e7a"/>
+    </linearGradient>
+    <linearGradient id="sv-forest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#2e7d32"/>
+      <stop offset="100%" stop-color="#1b5e20"/>
+    </linearGradient>
+    <linearGradient id="sv-meadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#7cb87f"/>
+      <stop offset="100%" stop-color="#4caf50"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="600" height="400" fill="url(#sv-sky)"/>
+
+  <!-- Distant ridge (left) -->
+  <polygon points="0,230 80,180 160,210 200,195 0,280"
+           fill="#5e8fa8" opacity="0.5"/>
+  <!-- Distant ridge (right) -->
+  <polygon points="600,230 520,190 440,215 400,200 600,280"
+           fill="#5e8fa8" opacity="0.5"/>
+
+  <!-- Mountain snow cap — the iconic dome -->
+  <polygon points="300,28
+                   230,135 210,160
+                   185,185
+                   180,200
+                   420,200
+                   415,185
+                   390,160
+                   370,135"
+           fill="url(#sv-snow)"/>
+
+  <!-- Glacial streaks on snow -->
+  <polyline points="295,40 275,120 268,160" fill="none" stroke="#d0eaf8" stroke-width="2" opacity="0.7"/>
+  <polyline points="305,40 325,120 335,162" fill="none" stroke="#d0eaf8" stroke-width="2" opacity="0.7"/>
+  <polyline points="300,28 248,148"         fill="none" stroke="#c5e3f5" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Rocky/icy mid-slopes -->
+  <polygon points="180,200 155,255 445,255 420,200"
+           fill="url(#sv-rock)"/>
+
+  <!-- Rock outcrop detail -->
+  <polygon points="240,210 255,205 270,215 255,225" fill="#455a64" opacity="0.6"/>
+  <polygon points="340,208 360,202 375,214 358,222" fill="#455a64" opacity="0.6"/>
+
+  <!-- Forested lower slopes -->
+  <polygon points="155,255 110,305 490,305 445,255"
+           fill="url(#sv-forest)"/>
+
+  <!-- Tree silhouettes along forest edge -->
+  <polygon points=" 95,305  105,278  115,305" fill="#1a4a1e"/>
+  <polygon points="112,305  124,272  136,305" fill="#1a4a1e"/>
+  <polygon points="130,305  143,280  156,305" fill="#1a4a1e"/>
+  <polygon points="455,305  467,275  479,305" fill="#1a4a1e"/>
+  <polygon points="472,305  485,280  498,305" fill="#1a4a1e"/>
+  <polygon points="490,305  503,275  516,305" fill="#1a4a1e"/>
+
+  <!-- Foreground meadow -->
+  <rect x="0" y="305" width="600" height="95" fill="url(#sv-meadow)"/>
+
+  <!-- Moraine boulders in meadow -->
+  <ellipse cx="170" cy="340" rx="18" ry="10" fill="#78909c" opacity="0.7"/>
+  <ellipse cx="430" cy="345" rx="14" ry="8"  fill="#78909c" opacity="0.7"/>
+  <ellipse cx="300" cy="360" rx="22" ry="11" fill="#607d8b" opacity="0.6"/>
+
+  <!-- Subtle clouds -->
+  <ellipse cx="120" cy="85"  rx="55" ry="18" fill="white" opacity="0.35"/>
+  <ellipse cx="480" cy="75"  rx="50" ry="16" fill="white" opacity="0.30"/>
+  <ellipse cx="350" cy="100" rx="40" ry="12" fill="white" opacity="0.20"/>
+</svg>

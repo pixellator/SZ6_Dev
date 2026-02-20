@@ -6,6 +6,8 @@
   .game-wrap      { display: grid; grid-template-columns: 3fr 1fr; gap: 1rem; align-items: start; }
   #state-display  { font-family: monospace; white-space: pre; background:#1e1e2e; color:#cdd6f4;
                     padding:1.2rem; border-radius:6px; font-size:1rem; line-height:1.5; min-height:8rem; }
+  /* Shown instead of #state-display when the formulation provides vis_html. */
+  #vis-display    { padding:.8rem; overflow:auto; }
   #ops-list       { list-style: none; }
   #ops-list li    { margin-bottom:.4rem; }
   #ops-list li button { width:100%; text-align:left; padding:.4rem .7rem; border-radius:4px;
@@ -19,8 +21,26 @@
                     border-radius:4px; margin-bottom:.6rem; }
   #status-bar     { padding:.4rem .8rem; background:#e8f4fd; border-radius:4px;
                     font-size:.85rem; color:#0c5460; margin-bottom:.6rem; }
+  /* Persistent current-message bar (never auto-hides). */
   #transition-msg { padding:.5rem .8rem; background:#f3e5f5; color:#4a148c;
-                    border-radius:4px; margin-bottom:.6rem; display:none; }
+                    border-radius:4px; margin-bottom:.6rem; min-height:2.4rem; }
+  /* When empty (no transition yet) occupy space without showing the box. */
+  #transition-msg:empty { background:transparent; padding:0; min-height:1.5rem; }
+  /* Highlighted when a historical message is recalled. */
+  #transition-msg.history-recall { background:#ede7f6; outline:2px solid #9c27b0; }
+
+  /* ── Transition history panel ── */
+  #transition-history { margin-top:.75rem; }
+  #transition-history summary { cursor:pointer; padding:.35rem .6rem;
+    background:#f0f4f8; border-radius:4px; user-select:none;
+    color:#444; font-size:.85rem; }
+  #transition-history summary:hover { background:#e4eaf0; }
+  #history-list { margin:.4rem 0 0 0; padding:0 0 0 1.6rem;
+    max-height:16rem; overflow-y:auto; border-left:3px solid #e0d0ee; }
+  #history-list li { padding:.2rem .3rem; cursor:pointer;
+    border-radius:3px; color:#555; margin-bottom:.15rem; font-size:.85rem; }
+  #history-list li:hover { background:#f3e5f5; color:#4a148c; }
+  #history-list li.selected { background:#e8d5f0; color:#4a148c; font-weight:600; }
   #goal-banner    { padding:.8rem 1rem; background:#d4edda; color:#155724;
                     border-radius:4px; font-size:1.1rem; font-weight:700; display:none; }
   #paused-banner  { padding:.8rem 1rem; background:#fff3cd; color:#856404;
@@ -90,9 +110,14 @@
   <!-- Left: game state display -->
   <div>
     <div class="card" style="padding:0; overflow:hidden;">
-      <pre id="state-display">Loading…</pre>
+      <div  id="vis-display"   style="display:none;"></div>
+      <pre  id="state-display">Loading…</pre>
     </div>
     <div id="turn-banner" style="margin-top:.5rem;"></div>
+    <details id="transition-history">
+      <summary>Transition History (<span id="history-count">0</span> moves)</summary>
+      <ol id="history-list"></ol>
+    </details>
   </div>
 
   <!-- Right: operator list + controls -->
@@ -162,6 +187,7 @@
   let gameOver      = false;
   let currentOps    = [];    // full operator list from the last state_update
   let pendingOpIndex = null; // op awaiting param input from the user
+  let transitionHistory = []; // plain-text messages in arrival order
 
   // ── File-edit modal setup (event listeners on static elements) ────────
 
@@ -217,8 +243,18 @@
       pendingOpIndex = null;
     }
 
-    document.getElementById('state-display').textContent =
-      msg.state_text || JSON.stringify(msg.state, null, 2);
+    // Prefer SVG/HTML vis if the formulation provides it; fall back to text.
+    const visDisplay  = document.getElementById('vis-display');
+    const textDisplay = document.getElementById('state-display');
+    if (msg.vis_html) {
+      visDisplay.innerHTML     = msg.vis_html;
+      visDisplay.style.display = '';
+      textDisplay.style.display = 'none';
+    } else {
+      textDisplay.textContent   = msg.state_text || JSON.stringify(msg.state, null, 2);
+      textDisplay.style.display = '';
+      visDisplay.style.display  = 'none';
+    }
 
     const isParallel = !!msg.is_parallel;
     // In parallel mode any player whose role-scoped operators are still
@@ -256,10 +292,40 @@
   }
 
   function onTransition(msg) {
+    // Show persistently — no auto-dismiss.
     const el = document.getElementById('transition-msg');
     el.textContent = msg.message;
-    el.style.display = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 6000);
+    // If a historical recall was showing, clear its highlight.
+    el.classList.remove('history-recall');
+    document.querySelectorAll('#history-list li.selected')
+      .forEach(l => l.classList.remove('selected'));
+
+    // Append to history list.
+    transitionHistory.push(msg.message);
+    const idx = transitionHistory.length - 1;
+    const list = document.getElementById('history-list');
+    const li = document.createElement('li');
+    li.dataset.idx = idx;
+    li.textContent = msg.message;
+    li.title = 'Click to re-display';
+    li.addEventListener('click', function() { recallHistoryItem(this); });
+    list.appendChild(li);
+    list.scrollTop = list.scrollHeight; // keep newest visible
+
+    document.getElementById('history-count').textContent = transitionHistory.length;
+  }
+
+  function recallHistoryItem(liEl) {
+    // Show a past message in the current-message bar with a visual indicator.
+    // It stays until the next real transition arrives.
+    const text = transitionHistory[parseInt(liEl.dataset.idx)];
+    if (text === undefined) return;
+    const el = document.getElementById('transition-msg');
+    el.textContent = text;
+    el.classList.add('history-recall');
+    document.querySelectorAll('#history-list li.selected')
+      .forEach(l => l.classList.remove('selected'));
+    liEl.classList.add('selected');
   }
 
   function onGoalReached(msg) {

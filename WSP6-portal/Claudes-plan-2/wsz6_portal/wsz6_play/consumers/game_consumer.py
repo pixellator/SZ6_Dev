@@ -95,26 +95,15 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
 
         # Send the current game state directly to this player on connect.
-        runner = session['game_runner']
-        state  = runner.current_state
-        ops    = runner.get_ops_info(state)
-        try:
-            at_goal = state.is_goal()
-        except Exception:
-            at_goal = False
-
-        await self.send_json({
-            'type':             'state_update',
-            'step':             runner.step,
-            'state':            serialize_state(state),
-            'state_text':       str(state),
-            'is_goal':          at_goal,
-            'is_parallel':      getattr(state, 'parallel', False),
-            'operators':        _filter_ops_for_role(ops, self.role_num),
-            'current_role_num': getattr(state, 'current_role_num', 0),
-            'your_role_num':    self.role_num,
-            'is_owner':         self.is_owner,
-        })
+        # build_state_payload() calls vis_module.render_state() when present,
+        # ensuring the SVG is shown from the very first render (not just after
+        # the first move).
+        runner  = session['game_runner']
+        payload = await runner.build_state_payload()
+        payload['operators']     = _filter_ops_for_role(payload['operators'], self.role_num)
+        payload['your_role_num'] = self.role_num
+        payload['is_owner']      = self.is_owner
+        await self.send_json(payload)
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):

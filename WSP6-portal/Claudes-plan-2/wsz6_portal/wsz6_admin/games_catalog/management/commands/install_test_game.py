@@ -46,6 +46,20 @@ GAME_DEFS = [
         'max_players': 27,
     },
     {
+        'slug':        'tic-tac-toe-vis',
+        'name':        'Tic-Tac-Toe (Visual)',
+        'pff_file':    'Tic_Tac_Toe_SZ6_with_vis.py',
+        'vis_file':    'Tic_Tac_Toe_WSZ6_VIS.py',
+        'brief_desc':  (
+            "Tic-Tac-Toe with SVG board visualization. "
+            "Identical rules to the standard version, but the board is "
+            "rendered as a graphic instead of ASCII text. "
+            "Demonstrates the WSZ6 M1 (basic visualization) feature."
+        ),
+        'min_players': 2,
+        'max_players': 27,
+    },
+    {
         'slug':        'guess-my-age',
         'name':        'Guess My Age',
         'pff_file':    'Guess_My_Age_SZ6.py',
@@ -106,6 +120,25 @@ GAME_DEFS = [
             "a text document; when done, the engine reports word-frequency "
             "counts of the document. Demonstrates the file_edit operator "
             "parameter type."
+        ),
+        'min_players': 1,
+        'max_players': 1,
+    },
+    {
+        'slug':        'show-mt-rainier',
+        'name':        'Mt. Rainier Views',
+        'pff_file':    'Show_Mt_Rainier_SZ6.py',
+        'vis_file':    'Show_Mt_Rainier_WSZ6_VIS.py',
+        'images_dir':  'Show_Mt_Rainier_images',
+        # Sources live in Vis-Features-Dev rather than the default Textual_SZ6.
+        # Path is relative to BASE_DIR.parent (i.e. Claudes-plan-2/).
+        'source_dir':  'Vis-Features-Dev/game_sources',
+        'brief_desc':  (
+            "Browse five scenic SVG illustrations of Mt. Rainier National "
+            "Park — the summit, Paradise Meadows, Reflection Lakes, Carbon "
+            "Glacier, and the Skyline Trail. Each scene comes with a "
+            "descriptive caption. The goal is to view all five scenes. "
+            "Demonstrates the WSZ6 M2 image-resource feature."
         ),
         'min_players': 1,
         'max_players': 1,
@@ -173,9 +206,18 @@ class Command(BaseCommand):
         installed = 0
         skipped   = 0
 
+        # repo_root is Claudes-plan-2/ (one level above wsz6_portal/).
+        repo_root = settings.BASE_DIR.parent
+
         for gdef in GAME_DEFS:
+            # Each game may override the source directory via 'source_dir'
+            # (relative to repo_root).  Falls back to the default textual_dir.
+            if 'source_dir' in gdef:
+                src_dir = repo_root / gdef['source_dir']
+            else:
+                src_dir = textual_dir
             ok = self._install_game(
-                gdef, textual_dir, src_base, games_repo, owner, status, Game
+                gdef, src_dir, src_base, games_repo, owner, status, Game
             )
             if ok:
                 installed += 1
@@ -194,14 +236,14 @@ class Command(BaseCommand):
     # Per-game helper
     # ------------------------------------------------------------------
 
-    def _install_game(self, gdef, textual_dir, src_base, games_repo,
+    def _install_game(self, gdef, src_dir, src_base, games_repo,
                       owner, status, Game):
         """Copy files and upsert the Game record. Returns True on success."""
         slug     = gdef['slug']
         name     = gdef['name']
         pff_file = gdef['pff_file']
 
-        src_pff = textual_dir / pff_file
+        src_pff = src_dir / pff_file
         if not src_pff.exists():
             self.stdout.write(self.style.WARNING(
                 f"  SKIP  '{name}': PFF not found at {src_pff}"
@@ -213,6 +255,34 @@ class Command(BaseCommand):
         dest_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src_pff,  dest_dir / pff_file)
         shutil.copy2(src_base, dest_dir / src_base.name)
+
+        # Copy optional visualization module if specified.
+        vis_file = gdef.get('vis_file')
+        if vis_file:
+            src_vis = src_dir / vis_file
+            if src_vis.exists():
+                shutil.copy2(src_vis, dest_dir / vis_file)
+            else:
+                self.stdout.write(self.style.WARNING(
+                    f"  WARN  vis file not found: {src_vis}"
+                ))
+
+        # Copy optional images directory if specified.
+        # Source: <src_dir>/<images_dir>/
+        # Destination: <dest_dir>/<images_dir>/   (preserves the folder name
+        #   so asset URLs remain stable across re-installs).
+        images_dir = gdef.get('images_dir')
+        if images_dir:
+            src_imgs = src_dir / images_dir
+            dst_imgs = dest_dir / images_dir
+            if src_imgs.is_dir():
+                if dst_imgs.exists():
+                    shutil.rmtree(dst_imgs)
+                shutil.copytree(src_imgs, dst_imgs)
+            else:
+                self.stdout.write(self.style.WARNING(
+                    f"  WARN  images_dir not found: {src_imgs}"
+                ))
 
         # Create or update the Game record.
         game, created = Game.objects.get_or_create(

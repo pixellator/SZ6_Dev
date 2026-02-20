@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400">
+  <defs>
+    <linearGradient id="st-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#0a2a6e"/>
+      <stop offset="55%"  stop-color="#3d7dbf"/>
+      <stop offset="100%" stop-color="#8dc8f0"/>
+    </linearGradient>
+    <linearGradient id="st-snow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#d6eaf8"/>
+    </linearGradient>
+    <linearGradient id="st-ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#78909c"/>
+      <stop offset="40%"  stop-color="#558b2f"/>
+      <stop offset="100%" stop-color="#33691e"/>
+    </linearGradient>
+    <linearGradient id="st-trail" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#bcaaa4"/>
+      <stop offset="100%" stop-color="#8d6e63"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="600" height="400" fill="url(#st-sky)"/>
+
+  <!-- Distant Cascade peaks (left horizon) -->
+  <polygon points="0,195 40,165 80,185 120,155 160,175 200,190 0,220"
+           fill="#4a7a9b" opacity="0.6"/>
+  <polygon points="0,185 40,155 80,175 0,210"
+           fill="#3d6b8a" opacity="0.5"/>
+
+  <!-- Mt. Rainier — dominant, right of centre -->
+  <polygon points="390,28
+                   315,148 300,168 290,185
+                   500,185
+                   490,168 480,148"
+           fill="url(#st-snow)"/>
+  <!-- Rock band below snow -->
+  <polygon points="290,185 275,210 515,210 500,185"
+           fill="#8fa8b5"/>
+  <!-- Glacial ribs on the mountain -->
+  <polyline points="390,35 370,110 355,155" fill="none" stroke="#d4e9f7" stroke-width="2.5" opacity="0.65"/>
+  <polyline points="390,35 412,112 428,158" fill="none" stroke="#d4e9f7" stroke-width="2"   opacity="0.6"/>
+  <polyline points="390,35 390,90 388,150"  fill="none" stroke="#c8e2f5" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Rolling terrain / ground -->
+  <polygon points="0,210 0,400 600,400 600,210
+                   550,205 500,210 450,200 390,210
+                   330,200 275,210 220,198 160,210
+                   100,200 50,208"
+           fill="url(#st-ground)"/>
+
+  <!-- Heather / krummholz shrubs on ridgeline -->
+  <ellipse cx="60"  cy="208" rx="22" ry="10" fill="#4caf50" opacity="0.8"/>
+  <ellipse cx="130" cy="205" rx="18" ry="9"  fill="#388e3c" opacity="0.8"/>
+  <ellipse cx="225" cy="202" rx="20" ry="8"  fill="#43a047" opacity="0.8"/>
+  <ellipse cx="480" cy="204" rx="22" ry="9"  fill="#388e3c" opacity="0.8"/>
+  <ellipse cx="555" cy="208" rx="20" ry="10" fill="#4caf50" opacity="0.8"/>
+
+  <!-- Rocky trail winding from lower-left toward mountain -->
+  <path d="M 30,400 C 60,370 80,345 100,320
+                     C 125,295 140,275 165,258
+                     C 195,240 220,230 250,222
+                     C 280,215 310,213 340,210"
+        fill="none" stroke="url(#st-trail)" stroke-width="12" stroke-linecap="round"/>
+  <!-- Trail edge highlights -->
+  <path d="M 30,400 C 60,370 80,345 100,320
+                     C 125,295 140,275 165,258
+                     C 195,240 220,230 250,222
+                     C 280,215 310,213 340,210"
+        fill="none" stroke="#d7ccc8" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- Trailside rocks -->
+  <ellipse cx="145" cy="310" rx="12" ry="7" fill="#78909c"/>
+  <ellipse cx="200" cy="280" rx="10" ry="6" fill="#607d8b"/>
+  <ellipse cx="250" cy="255" rx="11" ry="6" fill="#78909c"/>
+  <ellipse cx="110" cy="355" rx="14" ry="7" fill="#607d8b"/>
+
+  <!-- Wildflowers beside the trail -->
+  <circle cx="75"  cy="350" r="4" fill="#e53935"/>
+  <circle cx="88"  cy="340" r="3" fill="#fdd835"/>
+  <circle cx="125" cy="330" r="4" fill="#7b1fa2"/>
+  <circle cx="170" cy="290" r="3" fill="#e91e63"/>
+  <circle cx="185" cy="275" r="4" fill="#fdd835"/>
+  <circle cx="220" cy="260" r="3" fill="#e53935"/>
+  <circle cx="55"  cy="370" r="3" fill="#fdd835"/>
+  <circle cx="45"  cy="380" r="4" fill="#7b1fa2"/>
+
+  <!-- Marmot on a rock (tiny silhouette) -->
+  <ellipse cx="310" cy="355" rx="9"  ry="6"  fill="#5d4037"/>
+  <circle  cx="318" cy="350" r="5"          fill="#5d4037"/>
+  <!-- Marmot tail -->
+  <path d="M 302,356 C 295,352 292,358 298,360" fill="#5d4037"/>
+
+  <!-- Cloud wisps -->
+  <ellipse cx="100" cy="55" rx="65" ry="18" fill="white" opacity="0.35"/>
+  <ellipse cx="210" cy="70" rx="45" ry="13" fill="white" opacity="0.25"/>
+  <ellipse cx="510" cy="48" rx="55" ry="16" fill="white" opacity="0.30"/>
+</svg>
