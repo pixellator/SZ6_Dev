@@ -95,6 +95,56 @@
   #file-edit-footer .actions { display:flex; gap:.5rem; }
 
   @media (max-width:700px) { .game-wrap { grid-template-columns: 1fr; } }
+
+  /* ── Full-screen overlay ── */
+  #fs-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #111;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* vis-display sizing inside the overlay */
+  #fs-overlay #vis-display {
+    width: 100%; height: 100%;
+    max-width: none; padding: 1.5rem;
+    display: flex; align-items: center; justify-content: center;
+    overflow: auto; box-sizing: border-box;
+  }
+  /* Scale SVGs to fill the overlay */
+  #fs-overlay #vis-display svg { max-height: 90vh; width: 100%; }
+  /* ✕ button — always visible top-right */
+  #fs-close {
+    position: absolute; top: .8rem; right: .8rem;
+    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
+    color: #fff; font-size: 1.1rem; line-height: 1;
+    width: 2.2rem; height: 2.2rem; border-radius: 50%;
+    cursor: pointer; z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #fs-close:hover { background: rgba(255,255,255,.32); }
+  /* Operator tray — slides up from bottom on pointer proximity */
+  #fs-op-tray {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(10,10,10,.82); backdrop-filter: blur(6px);
+    padding: .65rem 1rem;
+    transform: translateY(100%);
+    transition: transform .28s ease;
+    z-index: 10000;
+  }
+  #fs-op-tray.visible { transform: translateY(0); }
+  #fs-ops-list { list-style: none; margin: 0; padding: 0;
+                 display: flex; flex-wrap: wrap; gap: .4rem; }
+  #fs-ops-list li button {
+    background: rgba(255,255,255,.12); color: #eee;
+    border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+    padding: .35rem .75rem; cursor: pointer; font-size: .88rem;
+  }
+  #fs-ops-list li button.applicable {
+    background: rgba(80,180,100,.35); border-color: rgba(100,220,120,.6); color: #dfffdf;
+  }
+  #fs-ops-list li button.applicable:hover { background: rgba(80,180,100,.55); }
+  #fs-ops-list li button:disabled { opacity: .4; cursor: not-allowed; }
+  /* Entry button (shown only when vis is active) */
+  #fs-btn { margin-top: .5rem; display: none; }
 </style>
 {% endblock %}
 
@@ -113,6 +163,9 @@
       <div  id="vis-display"   style="display:none;"></div>
       <pre  id="state-display">Loading…</pre>
     </div>
+    <button id="fs-btn" class="btn btn-sm"
+            style="background:#444; color:#fff;"
+            onclick="enterFullscreen()">&#x26F6; Full Screen</button>
     <div id="turn-banner" style="margin-top:.5rem;"></div>
     <details id="transition-history">
       <summary>Transition History (<span id="history-count">0</span> moves)</summary>
@@ -146,6 +199,15 @@
     <div id="help-msg" style="display:none; margin-top:.6rem; font-size:.85rem; color:#555;"></div>
   </div>
 
+</div>
+
+<!-- ── Full-screen vis overlay ──────────────────────────────────────── -->
+<div id="fs-overlay" style="display:none;">
+  <button id="fs-close" onclick="exitFullscreen()" title="Exit (Esc)">&#x2715;</button>
+  <!-- #vis-display is moved here by enterFullscreen(), restored by exitFullscreen() -->
+  <div id="fs-op-tray">
+    <ul id="fs-ops-list"></ul>
+  </div>
 </div>
 
 <!-- ── File-edit modal overlay ────────────────────────────────────────── -->
@@ -188,6 +250,12 @@
   let currentOps    = [];    // full operator list from the last state_update
   let pendingOpIndex = null; // op awaiting param input from the user
   let transitionHistory = []; // plain-text messages in arrival order
+
+  // ── Full-screen state ─────────────────────────────────────────────
+  let fsActive         = false;
+  let fsVisParent      = null;   // #vis-display's original parentNode
+  let fsVisNextSibling = null;   // original nextSibling for exact DOM restore
+  let fsLastIsMyTurn   = false;  // replayed into renderFsOps on each state_update
 
   // ── File-edit modal setup (event listeners on static elements) ────────
 
@@ -256,6 +324,15 @@
       visDisplay.style.display  = 'none';
     }
 
+    // Show/hide the full-screen button; auto-exit if vis vanishes.
+    const fsBtn = document.getElementById('fs-btn');
+    if (msg.vis_html) {
+      fsBtn.style.display = 'inline-block';
+    } else {
+      fsBtn.style.display = 'none';
+      if (fsActive) exitFullscreen();
+    }
+
     const isParallel = !!msg.is_parallel;
     // In parallel mode any player whose role-scoped operators are still
     // applicable can act; we don't gate on current_role_num.
@@ -283,6 +360,8 @@
       (msg.step === 0 || gameOver || msg.is_goal || isParallel);
     setStatus('Step ' + msg.step + (msg.is_goal ? ' — Goal reached!' : ''));
     renderOps(msg.operators, isMyTurn);
+    fsLastIsMyTurn = isMyTurn;
+    if (fsActive) renderFsOps(currentOps, isMyTurn);
 
     if (msg.is_goal && !gameOver) {
       gameOver = true;
@@ -327,6 +406,62 @@
       .forEach(l => l.classList.remove('selected'));
     liEl.classList.add('selected');
   }
+
+  // ── Full-screen enter / exit ──────────────────────────────────────
+
+  window.enterFullscreen = function() {
+    if (fsActive) return;
+    const visEl = document.getElementById('vis-display');
+    if (!visEl || visEl.style.display === 'none') return;
+
+    fsVisParent      = visEl.parentNode;
+    fsVisNextSibling = visEl.nextSibling;
+    fsActive         = true;
+
+    const overlay = document.getElementById('fs-overlay');
+    // Insert vis-display just before the tray (after #fs-close)
+    const tray = document.getElementById('fs-op-tray');
+    overlay.insertBefore(visEl, tray);
+    overlay.style.display = 'flex';
+
+    renderFsOps(currentOps, fsLastIsMyTurn);
+    document.addEventListener('keydown', _onFsKey);
+  };
+
+  window.exitFullscreen = function() {
+    if (!fsActive) return;
+    fsActive = false;
+
+    const visEl   = document.getElementById('vis-display');
+    const overlay = document.getElementById('fs-overlay');
+
+    // Restore vis-display to its exact original DOM position.
+    if (fsVisNextSibling) {
+      fsVisParent.insertBefore(visEl, fsVisNextSibling);
+    } else {
+      fsVisParent.appendChild(visEl);
+    }
+
+    overlay.style.display = 'none';
+    document.getElementById('fs-op-tray').classList.remove('visible');
+    document.removeEventListener('keydown', _onFsKey);
+  };
+
+  function _onFsKey(e) {
+    if (e.key === 'Escape') exitFullscreen();
+  }
+
+  // Reveal tray when pointer enters the bottom 12% of the overlay.
+  (function() {
+    const overlay = document.getElementById('fs-overlay');
+    overlay.addEventListener('pointermove', function(e) {
+      if (!fsActive) return;
+      const tray   = document.getElementById('fs-op-tray');
+      const thresh = overlay.clientHeight * 0.88;
+      if (e.clientY >= thresh) tray.classList.add('visible');
+      else                     tray.classList.remove('visible');
+    });
+  })();
 
   function onGoalReached(msg) {
     gameOver = true;
@@ -386,6 +521,24 @@
           ${esc(op.name)}${hint}
         </button>
       </li>`;
+    }
+    list.innerHTML = html;
+  }
+
+  function renderFsOps(ops, isMyTurn) {
+    const list = document.getElementById('fs-ops-list');
+    if (!list) return;
+    if (!ops || ops.length === 0) {
+      list.innerHTML =
+        '<li style="color:#aaa; font-style:italic; font-size:.85rem;">No operators</li>';
+      return;
+    }
+    let html = '';
+    for (const op of ops) {
+      const canApply = isMyTurn && op.applicable;
+      html += `<li><button class="${canApply ? 'applicable' : ''}"
+                   onclick="applyOp(${op.index})"
+                   ${canApply ? '' : 'disabled'}>${esc(op.name)}</button></li>`;
     }
     list.innerHTML = html;
   }
