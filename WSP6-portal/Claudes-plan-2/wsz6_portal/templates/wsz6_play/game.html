@@ -7,7 +7,19 @@
   #state-display  { font-family: monospace; white-space: pre; background:#1e1e2e; color:#cdd6f4;
                     padding:1.2rem; border-radius:6px; font-size:1rem; line-height:1.5; min-height:8rem; }
   /* Shown instead of #state-display when the formulation provides vis_html. */
-  #vis-display    { padding:.8rem; overflow:auto; }
+  #vis-display    { padding:.8rem; overflow:auto; position:relative; }
+
+  /* ── M5: previous-state watermark ── */
+  #vis-display.showing-prev::before {
+    content: 'PREVIOUS STATE';
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: .18rem 0;
+    background: rgba(255,140,0,.16);
+    border-bottom: 2px solid rgba(255,140,0,.55);
+    color: rgba(255,160,0,.90);
+    font-size: .68rem; font-weight: 700; letter-spacing: .14em;
+    text-align: center; pointer-events: none; z-index: 5;
+  }
   #ops-list       { list-style: none; }
   #ops-list li    { margin-bottom:.4rem; }
   #ops-list li button { width:100%; text-align:left; padding:.4rem .7rem; border-radius:4px;
@@ -145,6 +157,20 @@
   #fs-ops-list li button:disabled { opacity: .4; cursor: not-allowed; }
   /* Entry button (shown only when vis is active) */
   #fs-btn { margin-top: .5rem; display: none; }
+  /* M5: prev-toggle buttons (normal view + FS tray) */
+  .prev-toggle-btn {
+    background: rgba(255,140,0,.18); color: #c87800;
+    border: 1px solid rgba(255,140,0,.45); border-radius: 4px;
+    padding: .3rem .75rem; cursor: pointer; font-size: .85rem;
+  }
+  .prev-toggle-btn:disabled { opacity: .35; cursor: not-allowed; }
+  .prev-toggle-btn:not(:disabled):hover { background: rgba(255,140,0,.32); }
+  /* FS tray controls row (sits above the ops list) */
+  #fs-tray-controls {
+    display: flex; gap: .5rem;
+    margin-bottom: .35rem; padding-bottom: .35rem;
+    border-bottom: 1px solid rgba(255,255,255,.12);
+  }
 
   /* ── Tier 1: DOM element hover (SVG and HTML elements with data-* attrs) ── */
   #vis-display [data-op-index],
@@ -216,6 +242,10 @@
     <button id="fs-btn" class="btn btn-sm"
             style="background:#444; color:#fff;"
             onclick="enterFullscreen()">&#x26F6; Full Screen</button>
+    <button id="prev-btn" class="prev-toggle-btn"
+            style="margin-left:.4rem;"
+            onclick="togglePreviousState()"
+            disabled>&#x21D4; Show Previous</button>
     <div id="turn-banner" style="margin-top:.5rem;"></div>
     <details id="transition-history">
       <summary>Transition History (<span id="history-count">0</span> moves)</summary>
@@ -267,6 +297,11 @@
   <button id="fs-close" onclick="exitFullscreen()" title="Exit (Esc)">&#x2715;</button>
   <!-- #vis-display is moved here by enterFullscreen(), restored by exitFullscreen() -->
   <div id="fs-op-tray">
+    <div id="fs-tray-controls">
+      <button class="prev-toggle-btn"
+              onclick="togglePreviousState()"
+              disabled>&#x21D4; Show Previous</button>
+    </div>
     <ul id="fs-ops-list"></ul>
   </div>
 </div>
@@ -317,6 +352,11 @@
   let fsVisParent      = null;   // #vis-display's original parentNode
   let fsVisNextSibling = null;   // original nextSibling for exact DOM restore
   let fsLastIsMyTurn   = false;  // replayed into renderFsOps on each state_update
+
+  // ── Previous-state toggle (M5) ────────────────────────────────────
+  let currentVisHtml = '';    // vis_html from the most recent state_update
+  let prevVisHtml    = '';    // vis_html from one step earlier ('' at step 0)
+  let showingPrev    = false; // true while the toggle is showing prev state
 
   // ── Tier-2 canvas hit-testing state ───────────────────────────────
   let _regionDefs    = null;   // parsed Tier-2 region JSON (or null)
@@ -410,14 +450,24 @@
     const visDisplay  = document.getElementById('vis-display');
     const textDisplay = document.getElementById('state-display');
     if (msg.vis_html) {
-      visDisplay.innerHTML     = msg.vis_html;
-      visDisplay.style.display = '';
+      // M5: rotate cache before replacing; new move reverts toggle to current.
+      prevVisHtml    = currentVisHtml;
+      currentVisHtml = msg.vis_html;
+      showingPrev    = false;
+      visDisplay.classList.remove('showing-prev');
+      visDisplay.innerHTML      = msg.vis_html;
+      visDisplay.style.display  = '';
       textDisplay.style.display = 'none';
       setupHitCanvas();   // Tier 2: parse #wsz6-regions JSON if present
+      _updatePrevToggle();
     } else {
+      prevVisHtml    = currentVisHtml;
+      currentVisHtml = '';
+      showingPrev    = false;
       textDisplay.textContent   = msg.state_text || JSON.stringify(msg.state, null, 2);
       textDisplay.style.display = '';
       visDisplay.style.display  = 'none';
+      _updatePrevToggle();
     }
 
     // Show/hide the full-screen button; auto-exit if vis vanishes.
@@ -503,6 +553,27 @@
     liEl.classList.add('selected');
   }
 
+  // ── M5: previous-state toggle ─────────────────────────────────────
+
+  function _updatePrevToggle() {
+    const hasPrev = !!prevVisHtml;
+    document.querySelectorAll('.prev-toggle-btn').forEach(function(btn) {
+      btn.disabled    = !hasPrev;
+      btn.textContent = showingPrev ? '\u21A9 Show Current' : '\u21D4 Show Previous';
+    });
+    const vd = document.getElementById('vis-display');
+    if (vd) vd.classList.toggle('showing-prev', showingPrev);
+  }
+
+  window.togglePreviousState = function() {
+    if (!prevVisHtml) return;
+    showingPrev = !showingPrev;
+    const vd = document.getElementById('vis-display');
+    vd.innerHTML = showingPrev ? prevVisHtml : currentVisHtml;
+    setupHitCanvas();      // re-parse Tier-2 canvas regions if present
+    _updatePrevToggle();
+  };
+
   // ── Full-screen enter / exit ──────────────────────────────────────
 
   window.enterFullscreen = function() {
@@ -521,6 +592,7 @@
     overlay.style.display = 'flex';
 
     renderFsOps(currentOps, fsLastIsMyTurn);
+    _updatePrevToggle();   // M5: sync tray button with current toggle state
     document.addEventListener('keydown', _onFsKey);
   };
 
