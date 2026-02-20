@@ -145,6 +145,56 @@
   #fs-ops-list li button:disabled { opacity: .4; cursor: not-allowed; }
   /* Entry button (shown only when vis is active) */
   #fs-btn { margin-top: .5rem; display: none; }
+
+  /* ── Tier 1: DOM element hover (SVG and HTML elements with data-* attrs) ── */
+  #vis-display [data-op-index],
+  #vis-display [data-info],
+  #vis-display [data-context]          { cursor: pointer; }
+
+  /* SVG elements: gold stroke on hover */
+  #vis-display svg [data-op-index]:hover,
+  #vis-display svg [data-info]:hover,
+  #vis-display svg [data-context]:hover {
+    stroke: #ffd700; stroke-width: 3px; stroke-opacity: 1;
+  }
+
+  /* HTML (non-SVG) elements: yellow-tint background on hover */
+  #vis-display :not(svg):not(svg *)[data-op-index]:hover,
+  #vis-display :not(svg):not(svg *)[data-info]:hover    {
+    background: rgba(255, 215, 0, 0.25);
+    outline: 2px solid #ffd700;
+    border-radius: 3px;
+  }
+
+  /* ── Info popup ── */
+  #vis-info-popup {
+    position: fixed; z-index: 10001;
+    background: rgba(20,20,30,.92); color: #eee;
+    padding: .5rem .8rem; border-radius: 6px;
+    font-size: .88rem; max-width: 280px;
+    line-height: 1.5; pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  }
+
+  /* ── Context menu ── */
+  #vis-ctx-menu {
+    position: fixed; z-index: 10001;
+    background: #fff; border: 1px solid #ccc;
+    border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+    min-width: 150px; overflow: hidden;
+  }
+  #vis-ctx-menu ul { list-style: none; margin: 0; padding: .25rem 0; }
+  #vis-ctx-menu li { padding: .45rem .9rem; cursor: pointer; font-size: .88rem; }
+  #vis-ctx-menu li:hover { background: #f0f4f8; }
+  #vis-ctx-menu li.ctx-info { color: #555; font-style: italic; }
+
+  /* ── Tier 2: canvas overlay label tooltip ── */
+  #vis-region-label {
+    position: fixed; z-index: 10002;
+    background: rgba(0,0,0,.7); color: #fff;
+    padding: .2rem .5rem; border-radius: 4px;
+    font-size: .78rem; pointer-events: none;
+  }
 </style>
 {% endblock %}
 
@@ -200,6 +250,17 @@
   </div>
 
 </div>
+
+<!-- ── Vis interaction: info popup ────────────────────────────────── -->
+<div id="vis-info-popup" style="display:none;"></div>
+
+<!-- ── Vis interaction: context menu ──────────────────────────────── -->
+<div id="vis-ctx-menu" style="display:none;">
+  <ul id="vis-ctx-list"></ul>
+</div>
+
+<!-- ── Tier 2: hover label (canvas regions) ───────────────────────── -->
+<div id="vis-region-label" style="display:none;"></div>
 
 <!-- ── Full-screen vis overlay ──────────────────────────────────────── -->
 <div id="fs-overlay" style="display:none;">
@@ -257,6 +318,11 @@
   let fsVisNextSibling = null;   // original nextSibling for exact DOM restore
   let fsLastIsMyTurn   = false;  // replayed into renderFsOps on each state_update
 
+  // ── Tier-2 canvas hit-testing state ───────────────────────────────
+  let _regionDefs    = null;   // parsed Tier-2 region JSON (or null)
+  let _regionCanvas  = null;   // <canvas> overlay element (Tier 2)
+  let _hoveredRegion = null;   // currently hovered region def (Tier 2)
+
   // ── File-edit modal setup (event listeners on static elements) ────────
 
   const feArea  = document.getElementById('file-edit-area');
@@ -272,6 +338,34 @@
     const count = text ? text.split(/\s+/).length : 0;
     feCount.textContent = count + (count === 1 ? ' word' : ' words');
   }
+
+  // ── Tier 1: DOM element interaction ──────────────────────────────
+  (function() {
+    const vd = document.getElementById('vis-display');
+
+    // Left-click: apply op (priority) or show info.
+    vd.addEventListener('click', function(e) {
+      closeInfoPopup(); closeCtxMenu();
+      const el = e.target.closest('[data-op-index],[data-info]');
+      if (!el) return;
+      if (el.dataset.opIndex !== undefined) {
+        const args = el.dataset.opArgs ? JSON.parse(el.dataset.opArgs) : undefined;
+        applyOp(parseInt(el.dataset.opIndex), args);
+      } else if (el.dataset.info) {
+        showInfoPopup(e.clientX, e.clientY, el.dataset.info);
+      }
+    });
+
+    // Right-click: context menu if data-context defined.
+    vd.addEventListener('contextmenu', function(e) {
+      const el = e.target.closest('[data-context]');
+      if (!el) return;
+      e.preventDefault();
+      closeInfoPopup();
+      const items = JSON.parse(el.dataset.context);
+      showCtxMenu(e.clientX, e.clientY, items);
+    });
+  })();
 
   // ── Connection ──────────────────────────────────────────────────
 
@@ -301,6 +395,7 @@
   }
 
   function onStateUpdate(msg) {
+    closeInfoPopup(); closeCtxMenu();
     myRoleNum  = msg.your_role_num;
     currentOps = msg.operators || [];
 
@@ -318,6 +413,7 @@
       visDisplay.innerHTML     = msg.vis_html;
       visDisplay.style.display = '';
       textDisplay.style.display = 'none';
+      setupHitCanvas();   // Tier 2: parse #wsz6-regions JSON if present
     } else {
       textDisplay.textContent   = msg.state_text || JSON.stringify(msg.state, null, 2);
       textDisplay.style.display = '';
@@ -448,7 +544,12 @@
   };
 
   function _onFsKey(e) {
-    if (e.key === 'Escape') exitFullscreen();
+    if (e.key === 'Escape') {
+      if (document.getElementById('vis-ctx-menu').style.display !== 'none') {
+        closeCtxMenu(); return;
+      }
+      exitFullscreen();
+    }
   }
 
   // Reveal tray when pointer enters the bottom 12% of the overlay.
@@ -557,8 +658,13 @@
 
   // ── User action: apply operator ───────────────────────────────────
 
-  window.applyOp = function(opIndex) {
+  window.applyOp = function(opIndex, clientArgs) {
     const op = currentOps.find(o => o.index === opIndex);
+    // If clientArgs supplied (from vis click), send directly.
+    if (clientArgs !== undefined) {
+      send({ type: 'apply_operator', op_index: opIndex, args: clientArgs });
+      return;
+    }
     if (!op || !op.params || op.params.length === 0) {
       send({ type: 'apply_operator', op_index: opIndex });
       return;
@@ -713,6 +819,201 @@
   function esc(str) {
     const d = document.createElement('div'); d.textContent = String(str); return d.innerHTML;
   }
+
+  // ── Tier 2: canvas coordinate hit-testing ────────────────────────
+
+  function setupHitCanvas() {
+    // Tear down any previous canvas.
+    if (_regionCanvas) { _regionCanvas.remove(); _regionCanvas = null; }
+    _regionDefs    = null;
+    _hoveredRegion = null;
+
+    const script = document.getElementById('wsz6-regions');
+    if (!script) return;
+
+    let manifest;
+    try { manifest = JSON.parse(script.textContent); } catch(e) { return; }
+
+    const container = document.getElementById(manifest.container_id);
+    if (!container) return;
+
+    _regionDefs = manifest.regions;
+    const nw = manifest.scene_width;
+    const nh = manifest.scene_height;
+
+    // Create canvas overlay.
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;' +
+                            'pointer-events:all;cursor:default;';
+    canvas.width  = nw;
+    canvas.height = nh;
+
+    // Container must be position:relative to anchor the canvas.
+    container.style.position = 'relative';
+    container.appendChild(canvas);
+    _regionCanvas = canvas;
+
+    // Scale helper: viewport coords → natural canvas coords.
+    function scalePoint(cx, cy) {
+      const r  = canvas.getBoundingClientRect();
+      const sx = nw / r.width;
+      const sy = nh / r.height;
+      return [(cx - r.left) * sx, (cy - r.top) * sy];
+    }
+
+    function findRegion(px, py) {
+      for (const reg of _regionDefs) {
+        if (_hitTest(reg, px, py)) return reg;
+      }
+      return null;
+    }
+
+    function redrawCanvas(hovered) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, nw, nh);
+      if (!hovered) return;
+      ctx.save();
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth   = 3;
+      ctx.fillStyle   = 'rgba(255,215,0,0.18)';
+      ctx.beginPath();
+      _drawRegion(ctx, hovered);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    canvas.addEventListener('mousemove', function(e) {
+      const [px, py] = scalePoint(e.clientX, e.clientY);
+      const reg = findRegion(px, py);
+      if (reg !== _hoveredRegion) {
+        _hoveredRegion = reg;
+        redrawCanvas(reg);
+        canvas.style.cursor = reg ? 'pointer' : 'default';
+        const lbl = document.getElementById('vis-region-label');
+        if (reg && reg.hover_label) {
+          lbl.textContent   = reg.hover_label;
+          lbl.style.left    = (e.clientX + 12) + 'px';
+          lbl.style.top     = (e.clientY - 24) + 'px';
+          lbl.style.display = 'block';
+        } else {
+          lbl.style.display = 'none';
+        }
+      }
+    });
+
+    canvas.addEventListener('mouseleave', function() {
+      _hoveredRegion = null;
+      redrawCanvas(null);
+      document.getElementById('vis-region-label').style.display = 'none';
+    });
+
+    canvas.addEventListener('click', function(e) {
+      closeInfoPopup(); closeCtxMenu();
+      const [px, py] = scalePoint(e.clientX, e.clientY);
+      const reg = findRegion(px, py);
+      if (!reg) return;
+      if (reg.op_index !== undefined) {
+        applyOp(reg.op_index, reg.op_args || undefined);
+      } else if (reg.info) {
+        showInfoPopup(e.clientX, e.clientY, reg.info);
+      }
+    });
+
+    canvas.addEventListener('contextmenu', function(e) {
+      const [px, py] = scalePoint(e.clientX, e.clientY);
+      const reg = findRegion(px, py);
+      if (!reg || !reg.context) return;
+      e.preventDefault();
+      closeInfoPopup();
+      showCtxMenu(e.clientX, e.clientY, reg.context);
+    });
+  }
+
+  // Point-in-region hit test for rect / circle / polygon.
+  function _hitTest(reg, px, py) {
+    if (reg.shape === 'rect') {
+      return px >= reg.x && px <= reg.x + reg.w && py >= reg.y && py <= reg.y + reg.h;
+    }
+    if (reg.shape === 'circle') {
+      const dx = px - reg.cx, dy = py - reg.cy;
+      return dx*dx + dy*dy <= reg.r * reg.r;
+    }
+    if (reg.shape === 'polygon') {
+      // Ray-casting algorithm.
+      const pts = reg.points;
+      let inside = false;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const xi = pts[i][0], yi = pts[i][1];
+        const xj = pts[j][0], yj = pts[j][1];
+        if (((yi > py) !== (yj > py)) &&
+            (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+          inside = !inside;
+        }
+      }
+      return inside;
+    }
+    return false;
+  }
+
+  // Draw a region shape onto a canvas 2d context (for hover highlight).
+  function _drawRegion(ctx, reg) {
+    if (reg.shape === 'rect') {
+      ctx.rect(reg.x, reg.y, reg.w, reg.h);
+    } else if (reg.shape === 'circle') {
+      ctx.arc(reg.cx, reg.cy, reg.r, 0, 2*Math.PI);
+    } else if (reg.shape === 'polygon') {
+      const pts = reg.points;
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+    }
+  }
+
+  // ── Shared action handlers: info popup, context menu ─────────────
+
+  function showInfoPopup(x, y, text) {
+    const p = document.getElementById('vis-info-popup');
+    p.textContent = text;
+    p.style.left  = Math.min(x + 14, window.innerWidth - 300) + 'px';
+    p.style.top   = (y + 14) + 'px';
+    p.style.display = 'block';
+  }
+  function closeInfoPopup() {
+    document.getElementById('vis-info-popup').style.display = 'none';
+  }
+
+  function showCtxMenu(x, y, items) {
+    const menu = document.getElementById('vis-ctx-menu');
+    const list = document.getElementById('vis-ctx-list');
+    list.innerHTML = '';
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.textContent = item.label;
+      if (item.info && item.op_index === undefined) li.classList.add('ctx-info');
+      li.addEventListener('click', function() {
+        closeCtxMenu();
+        if (item.op_index !== undefined) applyOp(item.op_index, item.op_args);
+        else if (item.info) showInfoPopup(x, y, item.info);
+      });
+      list.appendChild(li);
+    }
+    menu.style.left    = Math.min(x, window.innerWidth  - 180) + 'px';
+    menu.style.top     = Math.min(y, window.innerHeight - 200) + 'px';
+    menu.style.display = 'block';
+  }
+  function closeCtxMenu() {
+    document.getElementById('vis-ctx-menu').style.display = 'none';
+  }
+
+  // Close popups on click-outside or Esc.
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('#vis-ctx-menu'))  closeCtxMenu();
+    if (!e.target.closest('#vis-info-popup,#vis-display')) closeInfoPopup();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { closeInfoPopup(); closeCtxMenu(); }
+  });
 
   connect();
 })();

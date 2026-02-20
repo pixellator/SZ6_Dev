@@ -143,6 +143,23 @@ GAME_DEFS = [
         'min_players': 1,
         'max_players': 1,
     },
+    {
+        'slug':        'click-the-word',
+        'name':        "Cliquez sur l'image",
+        'pff_file':    'Click_Word_SZ6.py',
+        'vis_file':    'Click_Word_WSZ6_VIS.py',
+        # Sources live in Vis-Features-Dev/game_sources/.
+        'source_dir':  'Vis-Features-Dev/game_sources',
+        'brief_desc':  (
+            "A single-player French vocabulary game. A stylised room scene "
+            "is displayed alongside a French word; click on the matching "
+            "object in the scene. Six objects: apple, window, table, chair, "
+            "cup, and book. Incorrect clicks are counted. "
+            "Demonstrates the WSZ6 M3 Tier-2 canvas hit-testing feature."
+        ),
+        'min_players': 1,
+        'max_players': 1,
+    },
 ]
 
 
