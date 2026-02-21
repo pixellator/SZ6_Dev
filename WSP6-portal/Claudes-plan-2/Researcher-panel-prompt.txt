@@ -1,0 +1,49 @@
+Researcher-panel-prompt.txt
+
+Feb. 21, 2026
+
+Let's continue with the development of the WSZ6-portal.
+Now that we have reasonable support for installing games
+and playing them, let's flesh out the researcher's interface.
+
+Please refer back to the WSZ6-portal-dev-plan.md (call it
+DEV_PLAN), and the
+recent report of an audit of the system as it exists:
+Claudes_Audit_of_WSZ6_portal_Feb_20_2026.md
+You can see that we're very roughly about half way through
+the plan.  Also, there is technical debt in what has been
+accomplished, we are leaving some of that for later, in order
+to be able to get a clearer overview of what the entire
+system will be like.
+
+The researcher's interface is described, in DEV_PLAN,
+in section ### 8.6 Research Data Access Workflow.
+We need a plan to develop this functionality.
+
+Note: in addition to log files, some games may produce
+artifacts such as separate text documents.  An open question
+is whether these should be part of the log files or separate
+files pointed to by the log files.  If the latter, then there
+is a question of where they are stored (perhaps together with
+their log files in a folder of session data).  If the former,
+then there is a question of whether the entire document text
+is copied repeatedly in the logs whenever small edits are done
+or only the deltas are in the log files, but with a full
+version of the resulting doc coming at the end of the log file.
+When a researcher views a game-playthrough log file, they should
+have the option of seeing any document-like text in an appropriate
+view pane.
+
+Ideally, a researcher would have a means to "annotate" a game-session
+list and a log file, but these annotations should be separate from
+the Game Data Base and belong to the researcher, perhaps in a
+relational DB record that references the game, session, frame in
+the log file, and gives the annotation string.
+
+There should also be an easy way for a researcher to get a "handle"
+on any particular game sessions in order to paste them into external
+analytics tools that can then access the data via the portal's
+API.
+
+Please write your plan to develop this functionality in a file
+called Researcher-panel-dev-plan.md.
