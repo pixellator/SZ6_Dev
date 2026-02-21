@@ -128,7 +128,16 @@
 
 <!-- Play-throughs table -->
 <div class="card">
-  <h2>Play-throughs</h2>
+  <div style="display:flex; align-items:baseline; gap:1rem; flex-wrap:wrap; margin-bottom:.6rem;">
+    <h2 style="margin:0;">Play-throughs</h2>
+    <span style="flex:1;"></span>
+    <label style="display:flex; align-items:center; gap:.35rem; font-size:.82rem;
+                  cursor:pointer; font-weight:400; color:#555;"
+           title="If checked, a JSON file of your personal annotations is included in downloaded files">
+      <input type="checkbox" id="incl-ann" checked>
+      Include annotations
+    </label>
+  </div>
   {% if playthroughs %}
   <table>
     <thead>
@@ -162,10 +171,10 @@
         <td>
           <a href="{% url 'research:log_viewer' session.session_key pt.playthrough_id %}"
              class="btn btn-sm btn-primary">View Log</a>
-          <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}"
-             class="btn btn-sm">JSONL</a>
-          <a href="{% url 'research:export_zip' session.session_key pt.playthrough_id %}"
-             class="btn btn-sm">ZIP</a>
+          <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}?include_annotations=1"
+             data-export-ann class="btn btn-sm">JSONL</a>
+          <a href="{% url 'research:export_zip' session.session_key pt.playthrough_id %}?include_annotations=1"
+             data-export-ann class="btn btn-sm">ZIP</a>
         </td>
       </tr>
       {% endfor %}
@@ -177,10 +186,10 @@
 
   {% if playthroughs %}
   <div style="margin-top:.8rem; padding-top:.8rem; border-top:1px solid #eee;">
-    <a href="{% url 'research:export_session_zip' session.session_key %}"
-       class="btn btn-sm">&#8595; Export Entire Session (ZIP)</a>
+    <a href="{% url 'research:export_session_zip' session.session_key %}?include_annotations=1"
+       data-export-ann class="btn btn-sm">&#8595; Export Entire Session (ZIP)</a>
     <span style="font-size:.78rem; color:#888; margin-left:.5rem;">
-      Includes all play-throughs: logs, artifacts, and checkpoints.
+      Includes all play-throughs: logs, artifacts, checkpoints, and annotations.
     </span>
   </div>
   {% endif %}
@@ -197,5 +206,25 @@ function copyHandle() {
     setTimeout(function() { c.style.display = 'none'; }, 2000);
   });
 }
+
+// "Include annotations" toggle — updates ?include_annotations param on all export links.
+(function() {
+  var cb = document.getElementById('incl-ann');
+  if (!cb) return;
+  function updateExportLinks() {
+    var include = cb.checked;
+    document.querySelectorAll('[data-export-ann]').forEach(function(link) {
+      var url = new URL(link.href, location.href);
+      if (include) {
+        url.searchParams.set('include_annotations', '1');
+      } else {
+        url.searchParams.delete('include_annotations');
+      }
+      link.href = url.href;
+    });
+  }
+  cb.addEventListener('change', updateExportLinks);
+  // Initial state: checkbox is checked and links already carry ?include_annotations=1.
+})();
 </script>
 {% endblock %}

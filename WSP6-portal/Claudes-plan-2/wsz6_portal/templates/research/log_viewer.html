@@ -118,8 +118,14 @@
        class="btn btn-sm">PT{{ pt_index|add:"1" }} &#8594;</a>
   {% endif %}
   <span style="flex:1;"></span>
-  <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}"
-     class="btn btn-sm">&#8595; Export JSONL</a>
+  <label style="display:flex; align-items:center; gap:.3rem; font-size:.8rem;
+                cursor:pointer; color:#555;"
+         title="If checked, your annotations are bundled into the download">
+    <input type="checkbox" id="incl-ann-lv" checked>
+    Include annotations
+  </label>
+  <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}?include_annotations=1"
+     data-export-ann-lv class="btn btn-sm">&#8595; Export JSONL</a>
 </div>
 
 <!-- Play-through metadata strip -->
@@ -394,6 +400,23 @@
 
 {% block extra_scripts %}
 <script>
+// "Include annotations" toggle for JSONL export button.
+(function() {
+  var cb = document.getElementById('incl-ann-lv');
+  if (!cb) return;
+  cb.addEventListener('change', function() {
+    document.querySelectorAll('[data-export-ann-lv]').forEach(function(link) {
+      var url = new URL(link.href, location.href);
+      if (cb.checked) {
+        url.searchParams.set('include_annotations', '1');
+      } else {
+        url.searchParams.delete('include_annotations');
+      }
+      link.href = url.href;
+    });
+  });
+})();
+
 (function() {
   var SK  = '{{ session.session_key }}';
   var PTI = '{{ pt.playthrough_id }}';

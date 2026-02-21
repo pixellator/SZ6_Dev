@@ -34,6 +34,78 @@ from .models import ResearchAnnotation, ResearchAPIToken
 # ---------------------------------------------------------------------------
 # Access guard
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Annotation export helpers
+# ---------------------------------------------------------------------------
+
+def _build_pt_annotations_data(researcher, session_key, playthrough_id):
+    """Return a serialisable dict of all annotations for one play-through.
+
+    Structure:
+        {
+            "session_key": "...",
+            "playthrough_id": "...",
+            "researcher": "username",
+            "exported_at": "<ISO>",
+            "playthrough_annotations": [{"annotation": "...", "created_at": "..."}],
+            "frame_annotations": [{"log_frame_index": N, "annotation": "...", "created_at": "..."}]
+        }
+    """
+    from django.utils import timezone
+
+    rows = list(
+        ResearchAnnotation.objects
+        .filter(
+            researcher=researcher,
+            session_key=session_key,
+            playthrough_id=playthrough_id,
+        )
+        .order_by('log_frame_index', 'created_at')
+        .values('log_frame_index', 'annotation', 'created_at')
+    )
+    return {
+        'session_key':    str(session_key),
+        'playthrough_id': str(playthrough_id),
+        'researcher':     researcher.username,
+        'exported_at':    timezone.now().isoformat(),
+        'playthrough_annotations': [
+            {'annotation': r['annotation'],
+             'created_at': r['created_at'].isoformat()}
+            for r in rows if r['log_frame_index'] is None
+        ],
+        'frame_annotations': [
+            {'log_frame_index': r['log_frame_index'],
+             'annotation':      r['annotation'],
+             'created_at':      r['created_at'].isoformat()}
+            for r in rows if r['log_frame_index'] is not None
+        ],
+    }
+
+
+def _build_session_annotations_data(researcher, session_key):
+    """Return a serialisable dict of session-level annotations only."""
+    from django.utils import timezone
+
+    rows = list(
+        ResearchAnnotation.objects
+        .filter(
+            researcher=researcher,
+            session_key=session_key,
+            playthrough_id__isnull=True,
+        )
+        .order_by('created_at')
+        .values('annotation', 'created_at')
+    )
+    return {
+        'session_key': str(session_key),
+        'researcher':  researcher.username,
+        'exported_at': timezone.now().isoformat(),
+        'session_annotations': [
+            {'annotation': r['annotation'],
+             'created_at': r['created_at'].isoformat()}
+            for r in rows
+        ],
+    }
 
 def _require_research(request):
     """Return a 403 response if the user cannot access the research panel."""
@@ -424,7 +496,12 @@ def artifact_viewer(request, session_key, playthrough_id, artifact_name):
 
 @login_required
 def export_jsonl(request, session_key, playthrough_id):
-    """Serve the raw log.jsonl for a play-through as a file download."""
+    """Serve the raw log.jsonl for a play-through.
+
+    If ?include_annotations=1, bundles log.jsonl + annotations.json into a
+    small ZIP (since two files cannot be streamed as one download).
+    Otherwise serves the bare JSONL.
+    """
     guard = _require_research(request)
     if guard:
         return guard
@@ -441,8 +518,24 @@ def export_jsonl(request, session_key, playthrough_id):
                                   session_key=session_key)
     slug_part = session.game.slug[:20]
     key_part  = str(session_key).split('-')[0]
-    filename  = f"{slug_part}-{key_part}-pt.jsonl"
 
+    include_annotations = request.GET.get('include_annotations', '0') == '1'
+
+    if include_annotations:
+        # Bundle log.jsonl + annotations.json into a small ZIP.
+        ann_data = _build_pt_annotations_data(request.user, session_key, playthrough_id)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(pt.log_path, 'log.jsonl')
+            zf.writestr('annotations.json',
+                        json.dumps(ann_data, default=str, indent=2))
+        buf.seek(0)
+        filename = f"{slug_part}-{key_part}-pt-annotated.zip"
+        response = HttpResponse(buf.read(), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+    filename = f"{slug_part}-{key_part}-pt.jsonl"
     return FileResponse(
         open(pt.log_path, 'rb'),
         as_attachment=True,
@@ -453,7 +546,10 @@ def export_jsonl(request, session_key, playthrough_id):
 
 @login_required
 def export_zip(request, session_key, playthrough_id):
-    """ZIP download: log.jsonl + artifacts/ + checkpoints/ for one play-through."""
+    """ZIP download: log.jsonl + artifacts/ + checkpoints/ for one play-through.
+
+    If ?include_annotations=1, also adds annotations.json to the archive.
+    """
     guard = _require_research(request)
     if guard:
         return guard
@@ -473,12 +569,20 @@ def export_zip(request, session_key, playthrough_id):
     key_part  = str(session_key).split('-')[0]
     filename  = f"{slug_part}-{key_part}-pt.zip"
 
+    include_annotations = request.GET.get('include_annotations', '0') == '1'
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
         if pt.log_path and os.path.isfile(pt.log_path):
             zf.write(pt.log_path, 'log.jsonl')
         _zip_dir(zf, os.path.join(pt_dir, 'artifacts'),   'artifacts')
         _zip_dir(zf, os.path.join(pt_dir, 'checkpoints'), 'checkpoints')
+        if include_annotations:
+            ann_data = _build_pt_annotations_data(
+                request.user, session_key, playthrough_id
+            )
+            zf.writestr('annotations.json',
+                        json.dumps(ann_data, default=str, indent=2))
     buf.seek(0)
 
     response = HttpResponse(buf.read(), content_type='application/zip')
@@ -522,6 +626,8 @@ def export_session_zip(request, session_key):
     key_part  = str(session_key).split('-')[0]
     filename  = f"{slug_part}-{key_part}-session.zip"
 
+    include_annotations = request.GET.get('include_annotations', '0') == '1'
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
         for i, pt in enumerate(playthroughs, start=1):
@@ -533,6 +639,12 @@ def export_session_zip(request, session_key):
                 zf.write(pt.log_path, f"{prefix}/log.jsonl")
             _zip_dir(zf, os.path.join(pt_dir, 'artifacts'),   f"{prefix}/artifacts")
             _zip_dir(zf, os.path.join(pt_dir, 'checkpoints'), f"{prefix}/checkpoints")
+            if include_annotations:
+                ann_data = _build_pt_annotations_data(
+                    request.user, session_key, pt.playthrough_id
+                )
+                zf.writestr(f"{prefix}/annotations.json",
+                            json.dumps(ann_data, default=str, indent=2))
 
         # Include session_meta.json if present (one level above playthroughs/).
         if playthroughs and playthroughs[0].log_path:
@@ -541,6 +653,11 @@ def export_session_zip(request, session_key):
                 meta_path = os.path.join(s_dir, 'session_meta.json')
                 if os.path.isfile(meta_path):
                     zf.write(meta_path, 'session_meta.json')
+
+        if include_annotations:
+            sess_ann_data = _build_session_annotations_data(request.user, session_key)
+            zf.writestr('session_annotations.json',
+                        json.dumps(sess_ann_data, default=str, indent=2))
 
     buf.seek(0)
     response = HttpResponse(buf.read(), content_type='application/zip')
