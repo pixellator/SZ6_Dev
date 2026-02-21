@@ -27,4 +27,13 @@ urlpatterns = [
          views.export_jsonl, name='export_jsonl'),
     path('sessions/<uuid:session_key>/<uuid:playthrough_id>/export.zip',
          views.export_zip, name='export_zip'),
+
+    # R6 — annotations
+    path('annotations/',                    views.annotation_list,    name='annotation_list'),
+    path('annotations/add/',               views.add_annotation,     name='add_annotation'),
+    path('annotations/<int:pk>/delete/',   views.delete_annotation,  name='delete_annotation'),
+
+    # R6/R7 — API token management
+    path('api-token/',          views.api_token_page,       name='api_token'),
+    path('api-token/regenerate/', views.regenerate_api_token, name='regenerate_api_token'),
 ]

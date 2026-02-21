@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}API Token – Research{% endblock %}
+
+{% block extra_head %}
+<style>
+  .token-box { font-family:monospace; font-size:.9rem; background:#f5f5f5;
+               border:1px solid #ddd; border-radius:4px; padding:.5rem .8rem;
+               letter-spacing:.05em; filter:blur(5px); transition:filter .2s;
+               user-select:all; word-break:break-all; }
+  .token-box.revealed { filter:none; }
+  .code-block { background:#1e1e1e; color:#d4d4d4; font-family:monospace;
+                font-size:.82rem; padding:1rem 1.2rem; border-radius:6px;
+                overflow-x:auto; white-space:pre; line-height:1.5; }
+  .code-kw  { color:#569cd6; }
+  .code-str { color:#ce9178; }
+  .code-cm  { color:#6a9955; }
+  .copy-btn { font-size:.75rem; padding:.15rem .5rem; margin-left:.5rem;
+              vertical-align:middle; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:.5rem;">
+  <a href="{% url 'research:dashboard' %}">&#8592; Research Dashboard</a>
+</p>
+
+<h1>API Token</h1>
+
+<!-- Token card -->
+<div class="card">
+  <h2>Your Bearer Token</h2>
+  <p style="font-size:.88rem; color:#555; margin-bottom:.8rem;">
+    Use this token to authenticate external tools (Jupyter, Python, R) against
+    the WSZ6 research REST API.
+    <strong>Keep it secret</strong> — anyone with this token can read all session data.
+  </p>
+
+  {% if token_obj %}
+  <div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;">
+    <span id="token-display" class="token-box">{{ token_obj.token }}</span>
+    <button class="btn btn-sm copy-btn" onclick="revealAndCopy()">Reveal &amp; Copy</button>
+  </div>
+  <div style="font-size:.78rem; color:#888; margin-top:.4rem;">
+    Created: {{ token_obj.created_at|date:"Y-m-d H:i" }}
+    {% if token_obj.last_used %}
+    &nbsp;|&nbsp; Last used: {{ token_obj.last_used|date:"Y-m-d H:i" }}
+    {% else %}
+    &nbsp;|&nbsp; Never used
+    {% endif %}
+    {% if not token_obj.is_active %}
+    &nbsp;|&nbsp; <span style="color:#721c24; font-weight:600;">INACTIVE</span>
+    {% endif %}
+  </div>
+  {% else %}
+  <p style="color:#888;">You don't have a token yet. Generate one below.</p>
+  {% endif %}
+
+  <div style="margin-top:1rem; padding-top:.8rem; border-top:1px solid #eee;">
+    <form method="post" action="{% url 'research:regenerate_api_token' %}"
+          onsubmit="return confirm('{% if token_obj %}Regenerating will invalidate your existing token. Continue?{% else %}Generate a new API token?{% endif %}');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm {% if not token_obj %}btn-primary{% endif %}">
+        {% if token_obj %}&#8635; Regenerate Token{% else %}&#43; Generate Token{% endif %}
+      </button>
+      {% if token_obj %}
+      <span style="font-size:.78rem; color:#888; margin-left:.6rem;">
+        This will invalidate the current token immediately.
+      </span>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<!-- Quick Start -->
+{% if token_obj and token_obj.is_active %}
+<div class="card">
+  <h2>Quick Start — Python / Jupyter</h2>
+  <p style="font-size:.88rem; color:#555; margin-bottom:.8rem;">
+    Copy this snippet into a Jupyter notebook or Python script to start pulling
+    session data into Pandas.
+  </p>
+
+  <div style="position:relative;">
+    <pre class="code-block" id="qs-code">{% spaceless %}
+<span class="code-kw">import</span> requests, pandas <span class="code-kw">as</span> pd
+
+BASE    = <span class="code-str">"{{ request.scheme }}://{{ request.get_host }}"</span>
+TOKEN   = <span class="code-str">"{{ token_obj.token }}"</span>  <span class="code-cm"># keep secret!</span>
+HEADERS = {<span class="code-str">"Authorization"</span>: <span class="code-kw">f</span><span class="code-str">"Bearer {TOKEN}"</span>}
+
+<span class="code-cm"># List all sessions</span>
+r = requests.get(<span class="code-kw">f</span><span class="code-str">"{BASE}/api/v1/sessions/"</span>, headers=HEADERS)
+sessions = r.json()[<span class="code-str">"results"</span>]
+
+<span class="code-cm"># Pick the first session and list its play-throughs</span>
+sk = sessions[0][<span class="code-str">"session_key"</span>]
+pts = requests.get(
+    <span class="code-kw">f</span><span class="code-str">"{BASE}/api/v1/sessions/{sk}/playthroughs/"</span>,
+    headers=HEADERS,
+).json()[<span class="code-str">"results"</span>]
+
+<span class="code-cm"># Download log events for the first play-through as a DataFrame</span>
+pt_id = pts[0][<span class="code-str">"playthrough_id"</span>]
+log = requests.get(
+    <span class="code-kw">f</span><span class="code-str">"{BASE}/api/v1/sessions/{sk}/playthroughs/{pt_id}/log/"</span>,
+    headers=HEADERS,
+).json()[<span class="code-str">"entries"</span>]
+
+df = pd.json_normalize([e[<span class="code-str">"data"</span>] <span class="code-kw">for</span> e <span class="code-kw">in</span> log])
+<span class="code-kw">print</span>(df.head())
+{% endspaceless %}</pre>
+    <button class="btn btn-sm copy-btn" style="position:absolute; top:.5rem; right:.5rem;"
+            onclick="copyCode()">Copy</button>
+    <span id="copy-confirm" style="position:absolute; top:.5rem; right:5rem;
+                                    font-size:.75rem; color:#28a745; display:none;">Copied!</span>
+  </div>
+
+  <p style="font-size:.82rem; color:#666; margin-top:.8rem;">
+    Filter by game:&nbsp;
+    <code>GET /api/v1/sessions/?game=tic-tac-toe&amp;status=completed</code><br>
+    Download raw JSONL:&nbsp;
+    <code>GET /api/v1/sessions/&lt;key&gt;/playthroughs/&lt;pt_id&gt;/log.jsonl</code>
+  </p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function revealAndCopy() {
+  var box = document.getElementById('token-display');
+  box.classList.add('revealed');
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(box.textContent.trim());
+  }
+}
+
+function copyCode() {
+  var pre  = document.getElementById('qs-code');
+  var text = pre.innerText || pre.textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      var c = document.getElementById('copy-confirm');
+      c.style.display = 'inline';
+      setTimeout(function() { c.style.display = 'none'; }, 2000);
+    });
+  }
+}
+</script>
+{% endblock %}

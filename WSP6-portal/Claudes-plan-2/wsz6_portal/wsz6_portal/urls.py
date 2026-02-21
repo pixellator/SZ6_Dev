@@ -27,4 +27,7 @@ urlpatterns = [
 
     # Internal REST API (admin ↔ play, localhost only)
     path('internal/v1/', include('wsz6_play.internal_api.urls')),
+
+    # External research REST API (Bearer-token or session auth)
+    path('api/v1/', include('wsz6_admin.research.api_urls')),
 ]

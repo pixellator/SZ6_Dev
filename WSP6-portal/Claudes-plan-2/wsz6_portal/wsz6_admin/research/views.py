@@ -1,7 +1,7 @@
 """
 wsz6_admin/research/views.py
 
-Research-panel views (Phase 5 — R1–R5).
+Research-panel views (Phase 5 — R1–R7).
 
 Access is restricted to users whose can_access_research() returns True
 (ADMIN_RESEARCH and ADMIN_GENERAL).
@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import uuid
 import zipfile
 
 from django.contrib.auth.decorators import login_required
@@ -18,13 +19,16 @@ from django.core.paginator import Paginator
 from django.db.models import Count
 from django.http import (
     FileResponse, Http404, HttpResponse,
-    HttpResponseForbidden, JsonResponse,
+    HttpResponseForbidden, HttpResponseNotAllowed, JsonResponse,
 )
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
 from wsz6_admin.games_catalog.models import Game
 from wsz6_admin.sessions_log.models import GameSession
 from wsz6_play.models import PlayThrough
+
+from .models import ResearchAnnotation, ResearchAPIToken
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +80,14 @@ def _zip_dir(zf, disk_dir, zip_prefix):
         fpath = os.path.join(disk_dir, fname)
         if os.path.isfile(fpath):
             zf.write(fpath, f"{zip_prefix}/{fname}")
+
+
+def _safe_next(url, fallback='/research/'):
+    """Return url only if it looks like a safe local redirect, else fallback."""
+    url = (url or '').strip()
+    if url.startswith('/') and not url.startswith('//') and ':' not in url:
+        return url
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +165,7 @@ def research_dashboard(request):
 
 @login_required
 def session_detail(request, session_key):
-    """Session metadata + list of all play-throughs."""
+    """Session metadata + list of all play-throughs + session-level annotations."""
     guard = _require_research(request)
     if guard:
         return guard
@@ -176,9 +188,19 @@ def session_detail(request, session_key):
     for i, pt in enumerate(playthroughs):
         pt.display_num = i + 1
 
+    # Session-level annotations (this researcher, no playthrough_id)
+    session_annotations = list(
+        ResearchAnnotation.objects.filter(
+            researcher=request.user,
+            session_key=session_key,
+            playthrough_id__isnull=True,
+        )
+    )
+
     return render(request, 'research/session_detail.html', {
-        'session':      session,
-        'playthroughs': playthroughs,
+        'session':             session,
+        'playthroughs':        playthroughs,
+        'session_annotations': session_annotations,
     })
 
 
@@ -220,7 +242,7 @@ def _enrich_log_entry(entry):
 
 @login_required
 def log_viewer(request, session_key, playthrough_id):
-    """Step-by-step replay of a single play-through log."""
+    """Step-by-step replay of a single play-through log, with annotations."""
     guard = _require_research(request)
     if guard:
         return guard
@@ -259,6 +281,28 @@ def log_viewer(request, session_key, playthrough_id):
         except OSError as exc:
             log_error = str(exc)
 
+    # Load annotations for this play-through.
+    pt_annotations = []
+    if not log_error:
+        try:
+            all_anns = list(
+                ResearchAnnotation.objects.filter(
+                    researcher=request.user,
+                    session_key=session_key,
+                    playthrough_id=playthrough_id,
+                )
+            )
+            pt_annotations = [a for a in all_anns if a.log_frame_index is None]
+            frame_anns = {}
+            for a in all_anns:
+                if a.log_frame_index is not None:
+                    frame_anns.setdefault(a.log_frame_index, []).append(a)
+            for entry in log_entries:
+                entry['annotations'] = frame_anns.get(entry['index'], [])
+        except Exception:
+            for entry in log_entries:
+                entry['annotations'] = []
+
     paginator = Paginator(log_entries, 50)
     page_obj  = paginator.get_page(request.GET.get('page', 1))
 
@@ -283,14 +327,15 @@ def log_viewer(request, session_key, playthrough_id):
         pass
 
     return render(request, 'research/log_viewer.html', {
-        'session':       session,
-        'pt':            pt,
-        'pt_index':      pt_index,
-        'prev_pt':       prev_pt,
-        'next_pt':       next_pt,
-        'page_obj':      page_obj,
-        'log_error':     log_error,
-        'total_entries': len(log_entries),
+        'session':         session,
+        'pt':              pt,
+        'pt_index':        pt_index,
+        'prev_pt':         prev_pt,
+        'next_pt':         next_pt,
+        'page_obj':        page_obj,
+        'log_error':       log_error,
+        'total_entries':   len(log_entries),
+        'pt_annotations':  pt_annotations,
     })
 
 
@@ -374,7 +419,7 @@ def artifact_viewer(request, session_key, playthrough_id, artifact_name):
 
 
 # ---------------------------------------------------------------------------
-# R5 — Export: JSONL (shipped early in R3) + ZIP variants
+# R5 — Export: JSONL + ZIP variants
 # ---------------------------------------------------------------------------
 
 @login_required
@@ -501,3 +546,116 @@ def export_session_zip(request, session_key):
     response = HttpResponse(buf.read(), content_type='application/zip')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+# ---------------------------------------------------------------------------
+# R6 — Researcher annotations
+# ---------------------------------------------------------------------------
+
+@login_required
+def add_annotation(request):
+    """POST-only: create a ResearchAnnotation and redirect back."""
+    guard = _require_research(request)
+    if guard:
+        return guard
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    next_url       = _safe_next(request.POST.get('next', ''))
+    session_key    = request.POST.get('session_key', '').strip()
+    playthrough_id = request.POST.get('playthrough_id', '').strip() or None
+    frame_idx      = request.POST.get('log_frame_index', '').strip() or None
+    annotation     = request.POST.get('annotation', '').strip()
+
+    if not session_key or not annotation:
+        return redirect(next_url)
+
+    kwargs = {
+        'researcher':  request.user,
+        'session_key': session_key,
+        'annotation':  annotation,
+    }
+    if playthrough_id:
+        kwargs['playthrough_id'] = playthrough_id
+    if frame_idx is not None:
+        try:
+            kwargs['log_frame_index'] = int(frame_idx)
+        except ValueError:
+            pass
+
+    ResearchAnnotation.objects.create(**kwargs)
+    return redirect(next_url)
+
+
+@login_required
+def delete_annotation(request, pk):
+    """POST-only: delete a ResearchAnnotation owned by this researcher."""
+    guard = _require_research(request)
+    if guard:
+        return guard
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    next_url = _safe_next(request.POST.get('next', ''))
+    ann = get_object_or_404(ResearchAnnotation, pk=pk, researcher=request.user)
+    ann.delete()
+    return redirect(next_url)
+
+
+@login_required
+def annotation_list(request):
+    """All annotations for the current researcher, newest first."""
+    guard = _require_research(request)
+    if guard:
+        return guard
+
+    annotations = (
+        ResearchAnnotation.objects
+        .filter(researcher=request.user)
+        .order_by('-created_at')
+    )
+    return render(request, 'research/annotations.html', {
+        'annotations': annotations,
+    })
+
+
+# ---------------------------------------------------------------------------
+# R6/R7 — API token management
+# ---------------------------------------------------------------------------
+
+@login_required
+def api_token_page(request):
+    """Show the researcher's API token (masked) with reveal/regenerate actions."""
+    guard = _require_research(request)
+    if guard:
+        return guard
+
+    try:
+        token_obj = request.user.research_api_token
+    except ResearchAPIToken.DoesNotExist:
+        token_obj = None
+
+    return render(request, 'research/api_token.html', {
+        'token_obj': token_obj,
+    })
+
+
+@login_required
+def regenerate_api_token(request):
+    """POST-only: create or regenerate the researcher's API token."""
+    guard = _require_research(request)
+    if guard:
+        return guard
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    token_obj, created = ResearchAPIToken.objects.get_or_create(
+        researcher=request.user
+    )
+    if not created:
+        # Regenerate the token UUID.
+        token_obj.token     = uuid.uuid4()
+        token_obj.is_active = True
+        token_obj.save(update_fields=['token', 'is_active'])
+
+    return redirect(reverse('research:api_token'))

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}My Annotations – Research{% endblock %}
+
+{% block extra_head %}
+<style>
+  .ann-level { font-size:.75rem; font-weight:600; text-transform:uppercase;
+               letter-spacing:.04em; padding:.15rem .5rem; border-radius:3px;
+               background:#e9ecef; color:#555; }
+  .ann-level-session     { background:#d1ecf1; color:#0c5460; }
+  .ann-level-playthrough { background:#d4edda; color:#155724; }
+  .ann-level-frame       { background:#e2d9f3; color:#3d0971; }
+  .ann-text { font-size:.9rem; word-break:break-word; }
+  .ann-meta { font-size:.76rem; color:#888; white-space:nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:.5rem;">
+  <a href="{% url 'research:dashboard' %}">&#8592; Research Dashboard</a>
+</p>
+
+<h1>My Research Annotations</h1>
+
+{% if annotations %}
+<div class="card" style="padding:0; overflow:hidden;">
+  <table>
+    <thead>
+      <tr>
+        <th>Level</th>
+        <th>Location</th>
+        <th>Note</th>
+        <th>Date</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ann in annotations %}
+    <tr>
+      <td>
+        {% if ann.log_frame_index is not None %}
+          <span class="ann-level ann-level-frame">Frame</span>
+        {% elif ann.playthrough_id %}
+          <span class="ann-level ann-level-playthrough">Play-through</span>
+        {% else %}
+          <span class="ann-level ann-level-session">Session</span>
+        {% endif %}
+      </td>
+      <td style="font-family:monospace; font-size:.78rem;">
+        {% if ann.playthrough_id %}
+          <a href="{% url 'research:log_viewer' ann.session_key ann.playthrough_id %}{% if ann.log_frame_index is not None %}#frame-{{ ann.log_frame_index }}{% endif %}">
+            {{ ann.session_key|stringformat:"s"|slice:":8" }}…{% if ann.log_frame_index is not None %} #{{ ann.log_frame_index }}{% endif %}
+          </a>
+        {% else %}
+          <a href="{% url 'research:session_detail' ann.session_key %}">
+            {{ ann.session_key|stringformat:"s"|slice:":8" }}…
+          </a>
+        {% endif %}
+      </td>
+      <td class="ann-text">{{ ann.annotation }}</td>
+      <td class="ann-meta">{{ ann.created_at|date:"Y-m-d H:i" }}</td>
+      <td>
+        <form method="post"
+              action="{% url 'research:delete_annotation' ann.pk %}"
+              style="display:inline;"
+              onsubmit="return confirm('Delete this annotation?');">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'research:annotation_list' %}">
+          <button type="submit" class="btn btn-sm" style="color:#721c24;"
+                  title="Delete annotation">&#10005;</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p style="color:#888;">
+    No annotations yet. Add notes while browsing session logs and detail pages.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

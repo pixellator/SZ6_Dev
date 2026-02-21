@@ -13,12 +13,26 @@
   .outcome-completed  { color: #155724; font-weight: 600; }
   .outcome-interrupted{ color: #721c24; }
   .outcome-cancelled  { color: #856404; }
+  /* Annotation styles */
+  .annotation-note { display:flex; gap:.5rem; align-items:flex-start; font-size:.85rem;
+                     padding:.35rem .6rem; background:#fffde7; border-left:3px solid #f9a825;
+                     border-radius:0 3px 3px 0; margin-top:.35rem; }
+  .annotation-text { flex:1; }
+  .annotation-meta { color:#aaa; font-size:.75rem; white-space:nowrap; }
+  .annotation-add summary { cursor:pointer; font-size:.82rem; color:#856404; margin-top:.5rem; }
+  .annotation-add textarea { width:100%; padding:.35rem; margin-top:.35rem;
+                              border:1px solid #ddd; border-radius:3px;
+                              font-size:.85rem; resize:vertical; }
 </style>
 {% endblock %}
 
 {% block content %}
 <p style="margin-bottom:.5rem;">
   <a href="{% url 'research:dashboard' %}">&#8592; Research Dashboard</a>
+  &nbsp;|&nbsp;
+  <a href="{% url 'research:annotation_list' %}">My Annotations</a>
+  &nbsp;|&nbsp;
+  <a href="{% url 'research:api_token' %}">&#128273; API Token</a>
 </p>
 
 <h1>Session Detail</h1>
@@ -70,6 +84,45 @@
       <button class="btn btn-sm" onclick="copyHandle()">Copy</button>
       <span id="copy-confirm" style="font-size:.8rem; color:#28a745; display:none;">Copied!</span>
     </div>
+  </div>
+
+  <!-- Session-level annotations -->
+  <div style="margin-top:1rem; border-top:1px solid #eee; padding-top:.8rem;">
+    <div class="meta-label">Session Notes
+      <a href="{% url 'research:annotation_list' %}"
+         style="font-size:.75rem; font-weight:400; margin-left:.5rem; color:#1a3a5c;">
+        All my annotations &#8599;
+      </a>
+    </div>
+    {% for ann in session_annotations %}
+    <div class="annotation-note">
+      <span class="annotation-text">{{ ann.annotation }}</span>
+      <span class="annotation-meta">{{ ann.created_at|date:"Y-m-d H:i" }}</span>
+      <form method="post" action="{% url 'research:delete_annotation' ann.pk %}"
+            style="display:inline; flex-shrink:0;">
+        {% csrf_token %}
+        <input type="hidden" name="next"
+               value="{% url 'research:session_detail' session.session_key %}">
+        <button type="submit" class="btn btn-sm"
+                style="color:#721c24; padding:.1rem .35rem;"
+                title="Delete note">&#10005;</button>
+      </form>
+    </div>
+    {% empty %}
+    <span style="color:#aaa; font-size:.82rem;">No session notes yet.</span>
+    {% endfor %}
+
+    <details class="annotation-add">
+      <summary>+ Add session note</summary>
+      <form method="post" action="{% url 'research:add_annotation' %}">
+        {% csrf_token %}
+        <input type="hidden" name="session_key" value="{{ session.session_key }}">
+        <input type="hidden" name="next"
+               value="{% url 'research:session_detail' session.session_key %}">
+        <textarea name="annotation" rows="3"></textarea>
+        <button type="submit" class="btn btn-sm" style="margin-top:.3rem;">Save Note</button>
+      </form>
+    </details>
   </div>
 </div>
 

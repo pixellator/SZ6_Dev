@@ -77,6 +77,19 @@
 
   /* ── PT nav bar ───────────────────────────────────────────────── */
   .pt-nav { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  /* ── Annotations ─────────────────────────────────────────────── */
+  .annotation-note { display:flex; gap:.5rem; align-items:flex-start; font-size:.82rem;
+                     padding:.3rem .6rem; background:#fffde7; border-left:3px solid #f9a825;
+                     border-radius:0 3px 3px 0; margin-top:.3rem; }
+  .annotation-text { flex:1; }
+  .annotation-meta { color:#aaa; font-size:.74rem; white-space:nowrap; }
+  .annotation-add  { margin-top:.4rem; }
+  .annotation-add summary { cursor:pointer; font-size:.78rem; color:#856404; }
+  .annotation-add textarea { width:100%; padding:.3rem; margin-top:.3rem;
+                              border:1px solid #ddd; border-radius:3px;
+                              font-size:.82rem; resize:vertical; }
+  .annotation-add .btn { margin-top:.3rem; }
 </style>
 {% endblock %}
 
@@ -88,6 +101,10 @@
   &rsaquo;
   <a href="{% url 'research:session_detail' session.session_key %}">{{ session.game.name }}</a>
   &rsaquo; Play-through {{ pt_index|default:"?" }}
+  &nbsp;|&nbsp;
+  <a href="{% url 'research:annotation_list' %}">My Annotations</a>
+  &nbsp;|&nbsp;
+  <a href="{% url 'research:api_token' %}">&#128273; API Token</a>
 </p>
 
 <div class="pt-nav">
@@ -122,6 +139,40 @@
     <span style="color:#888;">in progress</span>
   {% endif %}
   &nbsp;|&nbsp; {{ total_entries }} log frame{{ total_entries|pluralize }}
+</div>
+
+<!-- Play-through annotations -->
+<div class="card" style="padding:.7rem 1.2rem; margin-bottom:.8rem;">
+  <div class="meta-label" style="margin-bottom:.3rem;">Play-through Notes</div>
+  {% for ann in pt_annotations %}
+  <div class="annotation-note">
+    <span class="annotation-text">{{ ann.annotation }}</span>
+    <span class="annotation-meta">{{ ann.created_at|date:"Y-m-d H:i" }}</span>
+    <form method="post" action="{% url 'research:delete_annotation' ann.pk %}"
+          style="display:inline; flex-shrink:0;">
+      {% csrf_token %}
+      <input type="hidden" name="next"
+             value="{% url 'research:log_viewer' session.session_key pt.playthrough_id %}">
+      <button type="submit" class="btn btn-sm"
+              style="color:#721c24; padding:.1rem .35rem;"
+              title="Delete note">&#10005;</button>
+    </form>
+  </div>
+  {% empty %}
+  <span style="color:#aaa; font-size:.82rem;">No play-through notes yet.</span>
+  {% endfor %}
+  <details class="annotation-add">
+    <summary>+ Add play-through note</summary>
+    <form method="post" action="{% url 'research:add_annotation' %}">
+      {% csrf_token %}
+      <input type="hidden" name="session_key" value="{{ session.session_key }}">
+      <input type="hidden" name="playthrough_id" value="{{ pt.playthrough_id }}">
+      <input type="hidden" name="next"
+             value="{% url 'research:log_viewer' session.session_key pt.playthrough_id %}">
+      <textarea name="annotation" rows="2"></textarea>
+      <button type="submit" class="btn btn-sm">Save Note</button>
+    </form>
+  </details>
 </div>
 
 {% if log_error %}
@@ -263,6 +314,37 @@
         {% endif %}
 
       </div>{# end frame-body #}
+
+      {# ── Frame annotations ─────────────────────────────────────────── #}
+      {% for ann in entry.annotations %}
+      <div class="annotation-note">
+        <span class="annotation-text">{{ ann.annotation }}</span>
+        <span class="annotation-meta">{{ ann.created_at|date:"Y-m-d H:i" }}</span>
+        <form method="post" action="{% url 'research:delete_annotation' ann.pk %}"
+              style="display:inline; flex-shrink:0;">
+          {% csrf_token %}
+          <input type="hidden" name="next"
+                 value="{{ request.get_full_path }}#frame-{{ entry.index }}">
+          <button type="submit" class="btn btn-sm"
+                  style="color:#721c24; padding:.1rem .35rem;"
+                  title="Delete note">&#10005;</button>
+        </form>
+      </div>
+      {% endfor %}
+      <details class="annotation-add">
+        <summary>+ Add note to frame #{{ entry.index }}</summary>
+        <form method="post" action="{% url 'research:add_annotation' %}">
+          {% csrf_token %}
+          <input type="hidden" name="session_key" value="{{ session.session_key }}">
+          <input type="hidden" name="playthrough_id" value="{{ pt.playthrough_id }}">
+          <input type="hidden" name="log_frame_index" value="{{ entry.index }}">
+          <input type="hidden" name="next"
+                 value="{{ request.get_full_path }}#frame-{{ entry.index }}">
+          <textarea name="annotation" rows="2"></textarea>
+          <button type="submit" class="btn btn-sm">Save Note</button>
+        </form>
+      </details>
+
     </div>{# end frame #}
     {% endwith %}
     {% empty %}
