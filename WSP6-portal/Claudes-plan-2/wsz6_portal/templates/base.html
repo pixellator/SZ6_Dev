@@ -98,6 +98,9 @@
       <a href="{% url 'dashboard:user_list' %}">Users</a>
       <a href="{% url 'dashboard:live_sessions' %}">Live</a>
     {% endif %}
+    {% if user.can_access_research %}
+      <a href="{% url 'research:dashboard' %}">Research</a>
+    {% endif %}
     {% if user.can_install_games %}
       <a href="{% url 'games_catalog:install' %}">Install Game</a>
     {% endif %}

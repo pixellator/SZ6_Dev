@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Session {{ session.session_key }} – Research{% endblock %}
+
+{% block extra_head %}
+<style>
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .meta-item { }
+  .meta-label { font-size: .78rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .meta-value { font-size: .95rem; margin-top: .15rem; }
+  .api-handle-bar { display: flex; gap: .5rem; align-items: center; margin-top: .5rem; }
+  .api-handle-bar input { font-family: monospace; font-size: .82rem; color: #555; background: #f5f5f5;
+                           border: 1px solid #ddd; border-radius: 4px; padding: .3rem .6rem; flex: 1; }
+  .outcome-completed  { color: #155724; font-weight: 600; }
+  .outcome-interrupted{ color: #721c24; }
+  .outcome-cancelled  { color: #856404; }
+</style>
+{% endblock %}
+
+{% block content %}
+<p style="margin-bottom:.5rem;">
+  <a href="{% url 'research:dashboard' %}">&#8592; Research Dashboard</a>
+</p>
+
+<h1>Session Detail</h1>
+
+<!-- Session metadata card -->
+<div class="card">
+  <h2>{{ session.game.name }}</h2>
+  <div class="meta-grid">
+    <div class="meta-item">
+      <div class="meta-label">Session Key</div>
+      <div class="meta-value" style="font-family:monospace; font-size:.82rem;">{{ session.session_key }}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Owner</div>
+      <div class="meta-value">{{ session.owner.username }}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Status</div>
+      <div class="meta-value"><span class="badge badge-{{ session.status }}">{{ session.get_status_display }}</span></div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Started</div>
+      <div class="meta-value">{{ session.started_at|date:"Y-m-d H:i:s" }}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Ended</div>
+      <div class="meta-value">{{ session.ended_at|date:"Y-m-d H:i:s"|default:"—" }}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">Play-throughs</div>
+      <div class="meta-value">{{ playthroughs|length }}</div>
+    </div>
+  </div>
+
+  {% if session.summary_json %}
+  <details style="margin-top:.5rem;">
+    <summary style="cursor:pointer; font-size:.85rem; color:#1a3a5c;">Session summary JSON</summary>
+    <pre style="font-size:.78rem; background:#f5f5f5; padding:.8rem; border-radius:4px; margin-top:.4rem;
+                overflow:auto; max-height:200px;">{{ session.summary_json }}</pre>
+  </details>
+  {% endif %}
+
+  <!-- API handle -->
+  <div style="margin-top:1rem; border-top:1px solid #eee; padding-top:.8rem;">
+    <div class="meta-label">API Handle</div>
+    <div class="api-handle-bar">
+      <input type="text" readonly id="api-handle-input"
+             value="{{ request.scheme }}://{{ request.get_host }}/api/v1/sessions/{{ session.session_key }}/">
+      <button class="btn btn-sm" onclick="copyHandle()">Copy</button>
+      <span id="copy-confirm" style="font-size:.8rem; color:#28a745; display:none;">Copied!</span>
+    </div>
+  </div>
+</div>
+
+<!-- Play-throughs table -->
+<div class="card">
+  <h2>Play-throughs</h2>
+  {% if playthroughs %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Outcome</th>
+        <th>Steps</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pt in playthroughs %}
+      <tr>
+        <td>{{ pt.display_num }}</td>
+        <td>{{ pt.started_at|date:"H:i:s" }}</td>
+        <td>{{ pt.ended_at|date:"H:i:s"|default:"—" }}</td>
+        <td>
+          {% if pt.outcome == 'completed' %}
+            <span class="outcome-completed">&#10003; Completed</span>
+          {% elif pt.outcome == 'interrupted' %}
+            <span class="outcome-interrupted">&#10007; Interrupted</span>
+          {% elif pt.outcome == 'cancelled' %}
+            <span class="outcome-cancelled">&#8211; Cancelled</span>
+          {% else %}
+            <span style="color:#888;">{{ pt.outcome|default:"in progress" }}</span>
+          {% endif %}
+        </td>
+        <td>{{ pt.step_count }}</td>
+        <td>
+          <a href="{% url 'research:log_viewer' session.session_key pt.playthrough_id %}"
+             class="btn btn-sm btn-primary">View Log</a>
+          <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}"
+             class="btn btn-sm">Export JSONL</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#888;">No play-throughs recorded for this session.</p>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function copyHandle() {
+  const input = document.getElementById('api-handle-input');
+  navigator.clipboard.writeText(input.value).then(function() {
+    const c = document.getElementById('copy-confirm');
+    c.style.display = 'inline';
+    setTimeout(function() { c.style.display = 'none'; }, 2000);
+  });
+}
+</script>
+{% endblock %}

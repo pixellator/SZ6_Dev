@@ -1,9 +1,108 @@
 {% extends "base.html" %}
 {% block title %}Research – WSZ6 Portal{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filter-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; margin-bottom: 1rem; }
+  .filter-form label { font-size: .78rem; }
+  .filter-form input,
+  .filter-form select { width: auto; min-width: 120px; }
+  .filter-form .filter-group { display: flex; flex-direction: column; }
+  .pt-count { color: #666; font-size: .85rem; }
+</style>
+{% endblock %}
+
 {% block content %}
 <h1>Research Dashboard</h1>
+
+<!-- Filter form -->
 <div class="card">
-  <p>Full research data access will be implemented in Phase 5.</p>
-  <p>Research admins will be able to browse, filter, and export session logs here.</p>
+  <form class="filter-form" method="get">
+    <div class="filter-group">
+      <label>Game</label>
+      <select name="game">
+        <option value="">All games</option>
+        {% for g in games %}
+          <option value="{{ g.slug }}" {% if game_slug == g.slug %}selected{% endif %}>{{ g.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Status</label>
+      <select name="status">
+        <option value="">Any status</option>
+        {% for code, label in status_choices %}
+          <option value="{{ code }}" {% if status == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>From date</label>
+      <input type="date" name="date_from" value="{{ date_from }}">
+    </div>
+    <div class="filter-group">
+      <label>To date</label>
+      <input type="date" name="date_to" value="{{ date_to }}">
+    </div>
+    <div class="filter-group">
+      <label>Owner username</label>
+      <input type="text" name="owner" value="{{ owner_q }}" placeholder="username…">
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if game_slug or status or date_from or date_to or owner_q %}
+      <a href="{% url 'research:dashboard' %}" class="btn">Clear</a>
+    {% endif %}
+  </form>
+
+  <p style="color:#666; font-size:.85rem; margin-bottom:.6rem;">
+    {{ total_count }} session{{ total_count|pluralize }} found.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Game</th>
+        <th>Owner</th>
+        <th>Status</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Play-throughs</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in page_obj %}
+      <tr>
+        <td>{{ s.game.name }}</td>
+        <td>{{ s.owner.username }}</td>
+        <td><span class="badge badge-{{ s.status }}">{{ s.get_status_display }}</span></td>
+        <td>{{ s.started_at|date:"Y-m-d H:i" }}</td>
+        <td>{{ s.ended_at|date:"Y-m-d H:i"|default:"—" }}</td>
+        <td class="pt-count">{{ s.playthrough_count }}</td>
+        <td>
+          <a href="{% url 'research:session_detail' s.session_key %}"
+             class="btn btn-sm btn-primary">View</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" style="color:#888; text-align:center; padding:1.5rem;">
+        No sessions match the current filters.
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Pagination -->
+  {% if page_obj.has_other_pages %}
+  <div style="margin-top:1rem; display:flex; gap:.4rem; align-items:center; font-size:.9rem;">
+    {% if page_obj.has_previous %}
+      <a href="?{{ filter_qs }}&page={{ page_obj.previous_page_number }}" class="btn btn-sm">&#8592; Prev</a>
+    {% endif %}
+    <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a href="?{{ filter_qs }}&page={{ page_obj.next_page_number }}" class="btn btn-sm">Next &#8594;</a>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

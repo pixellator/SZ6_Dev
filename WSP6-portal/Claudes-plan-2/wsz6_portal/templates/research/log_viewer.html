@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}Log – {{ session.game.name }} PT{{ pt_index }} – Research{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* ── Log viewer layout ────────────────────────────────────────── */
+  .log-wrap { display: grid; grid-template-columns: 1fr 340px; gap: 1rem; align-items: start; }
+  @media (max-width: 900px) { .log-wrap { grid-template-columns: 1fr; } }
+
+  /* ── Frame cards ──────────────────────────────────────────────── */
+  .frame { border-left: 4px solid #e0e0e0; padding: .5rem .8rem .5rem 1rem; margin-bottom: .6rem;
+           background: #fff; border-radius: 0 4px 4px 0; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .frame-header { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+  .frame-num { font-size: .75rem; color: #aaa; font-family: monospace; min-width: 48px; }
+  .frame-time { font-size: .75rem; color: #888; }
+  .frame-event { font-size: .82rem; font-weight: 700; text-transform: uppercase;
+                 letter-spacing: .04em; padding: .1rem .4rem; border-radius: 3px; }
+  .frame-body { margin-top: .4rem; font-size: .88rem; }
+
+  /* ── Event type colours ───────────────────────────────────────── */
+  .ev-game_started       { border-color: #1a3a5c; }
+  .ev-game_started       .frame-event { background:#1a3a5c; color:#fff; }
+  .ev-operator_applied   { border-color: #28a745; }
+  .ev-operator_applied   .frame-event { background:#28a745; color:#fff; }
+  .ev-undo_applied       { border-color: #ffc107; }
+  .ev-undo_applied       .frame-event { background:#ffc107; color:#212529; }
+  .ev-game_ended         { border-color: #1a3a5c; }
+  .ev-game_ended         .frame-event { background:#1a3a5c; color:#fff; }
+  .ev-game_paused        { border-color: #856404; }
+  .ev-game_paused        .frame-event { background:#fff3cd; color:#856404; }
+  .ev-game_resumed       { border-color: #28a745; }
+  .ev-game_resumed       .frame-event { background:#d4edda; color:#155724; }
+  .ev-player_joined      { border-color: #17a2b8; }
+  .ev-player_joined      .frame-event { background:#d1ecf1; color:#0c5460; }
+  .ev-player_left        { border-color: #6c757d; }
+  .ev-player_left        .frame-event { background:#e2e3e5; color:#383d41; }
+  .ev-artifact_created,
+  .ev-artifact_saved,
+  .ev-artifact_finalized { border-color: #6f42c1; }
+  .ev-artifact_created   .frame-event,
+  .ev-artifact_saved     .frame-event,
+  .ev-artifact_finalized .frame-event { background:#e2d9f3; color:#3d0971; }
+  .ev-parse_error        { border-color: #dc3545; }
+  .ev-parse_error        .frame-event { background:#f8d7da; color:#721c24; }
+
+  /* ── Role table ───────────────────────────────────────────────── */
+  .role-table { font-size: .82rem; border-collapse: collapse; margin-top: .4rem; }
+  .role-table th, .role-table td { padding: .2rem .6rem; border: 1px solid #ddd; }
+  .role-table th { background: #f0f4f8; }
+
+  /* ── Op chip ──────────────────────────────────────────────────── */
+  .op-chip { font-size: .82rem; }
+  .op-name { font-weight: 600; }
+  .op-meta { color: #666; font-size: .78rem; }
+
+  /* ── State details ────────────────────────────────────────────── */
+  .state-details summary { cursor: pointer; font-size: .78rem; color: #1a3a5c; margin-top: .3rem; }
+  .state-details pre { font-size: .72rem; background: #f8f8f8; padding: .6rem; border-radius: 4px;
+                        overflow: auto; max-height: 200px; margin-top: .3rem; }
+
+  /* ── Artifact pane ────────────────────────────────────────────── */
+  .artifact-pane { position: sticky; top: 1rem; }
+  .artifact-pane .card { background: #fdf6ff; border: 1px solid #d0b0e8; }
+  .artifact-pane h3 { color: #3d0971; }
+  .artifact-pane pre { font-size: .78rem; white-space: pre-wrap; word-break: break-word;
+                        max-height: 500px; overflow: auto; background: #fff;
+                        border: 1px solid #e0d0f0; padding: .6rem; border-radius: 4px; }
+  .artifact-link { cursor: pointer; font-size: .8rem; color: #6f42c1; text-decoration: underline; }
+
+  /* ── Pagination ───────────────────────────────────────────────── */
+  .pagination { display: flex; gap: .4rem; align-items: center; margin-top: 1rem; font-size: .9rem; }
+
+  /* ── PT nav bar ───────────────────────────────────────────────── */
+  .pt-nav { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Breadcrumb and nav -->
+<p style="margin-bottom:.5rem;">
+  <a href="{% url 'research:dashboard' %}">Research</a>
+  &rsaquo;
+  <a href="{% url 'research:session_detail' session.session_key %}">{{ session.game.name }}</a>
+  &rsaquo; Play-through {{ pt_index|default:"?" }}
+</p>
+
+<div class="pt-nav">
+  {% if prev_pt %}
+    <a href="{% url 'research:log_viewer' session.session_key prev_pt %}"
+       class="btn btn-sm">&#8592; PT{{ pt_index|add:"-1" }}</a>
+  {% endif %}
+  <h1 style="margin:0;">Log Viewer — Play-through {{ pt_index|default:"?" }}</h1>
+  {% if next_pt %}
+    <a href="{% url 'research:log_viewer' session.session_key next_pt %}"
+       class="btn btn-sm">PT{{ pt_index|add:"1" }} &#8594;</a>
+  {% endif %}
+  <span style="flex:1;"></span>
+  <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}"
+     class="btn btn-sm">&#8595; Export JSONL</a>
+</div>
+
+<!-- Play-through metadata strip -->
+<div class="card" style="padding:.8rem 1.2rem; margin-bottom:1rem; font-size:.85rem; color:#555;">
+  <strong>{{ session.game.name }}</strong>
+  &nbsp;|&nbsp; Session <code style="font-size:.8rem;">{{ session.session_key }}</code>
+  &nbsp;|&nbsp; PT {{ pt_index|default:"?" }}
+  ({{ pt.step_count }} step{{ pt.step_count|pluralize }})
+  &nbsp;|&nbsp;
+  {% if pt.outcome == 'completed' %}
+    <span style="color:#155724; font-weight:600;">&#10003; Completed</span>
+  {% elif pt.outcome == 'interrupted' %}
+    <span style="color:#721c24;">&#10007; Interrupted</span>
+  {% elif pt.outcome %}
+    {{ pt.outcome }}
+  {% else %}
+    <span style="color:#888;">in progress</span>
+  {% endif %}
+  &nbsp;|&nbsp; {{ total_entries }} log frame{{ total_entries|pluralize }}
+</div>
+
+{% if log_error %}
+  <div class="card" style="border-left:4px solid #dc3545;">
+    <strong style="color:#721c24;">Log file error:</strong> {{ log_error }}
+  </div>
+{% else %}
+
+<div class="log-wrap">
+
+  <!-- Left: log timeline -->
+  <div>
+
+    {% for entry in page_obj %}
+    {% with data=entry.data ev=entry.data.event %}
+    <div class="frame ev-{{ ev }}" id="frame-{{ entry.index }}">
+      <div class="frame-header">
+        <span class="frame-num">#{{ entry.index }}</span>
+        <span class="frame-event">{{ ev }}</span>
+        <span class="frame-time">{{ data.t }}</span>
+      </div>
+      <div class="frame-body">
+
+        {# ── game_started ──────────────────────────────────────────────── #}
+        {% if ev == 'game_started' %}
+          {% if data.role_assignments.roles %}
+          <table class="role-table">
+            <thead><tr><th>#</th><th>Role</th><th>Player</th><th>Observer</th></tr></thead>
+            <tbody>
+            {% for role in data.role_assignments.roles %}
+            <tr>
+              <td>{{ role.role_num }}</td>
+              <td><strong>{{ role.name }}</strong>{% if role.description %}<br><span style="color:#888;font-size:.75rem;">{{ role.description }}</span>{% endif %}</td>
+              <td>
+                {% if role.player %}
+                  {{ role.player.name }}{% if role.player.is_bot %} <em style="color:#888;">(bot)</em>{% endif %}
+                {% else %}
+                  <span style="color:#aaa;">—</span>
+                {% endif %}
+              </td>
+              <td>{% if role.is_observer %}Yes{% else %}No{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <details class="state-details">
+            <summary>Role assignments (raw)</summary>
+            <pre>{{ entry.role_assignments_json }}</pre>
+          </details>
+          {% endif %}
+
+        {# ── operator_applied ──────────────────────────────────────────── #}
+        {% elif ev == 'operator_applied' %}
+          <div class="op-chip">
+            <span class="op-name">{{ data.op_name|default:"(unknown)" }}</span>
+            <span class="op-meta">
+              &nbsp;&mdash;&nbsp;Step {{ data.step }}
+              &nbsp;&mdash;&nbsp;Role {{ data.role_num }}
+              {% if data.args %}&nbsp;&mdash;&nbsp;args: {{ data.args|join:", " }}{% endif %}
+            </span>
+          </div>
+          {% if entry.state_json %}
+          <details class="state-details">
+            <summary>State after step {{ data.step }}</summary>
+            <pre>{{ entry.state_json }}</pre>
+          </details>
+          {% endif %}
+
+        {# ── undo_applied ──────────────────────────────────────────────── #}
+        {% elif ev == 'undo_applied' %}
+          <span style="color:#856404;">&#8630; Rolled back to step {{ data.step }}</span>
+
+        {# ── game_ended ────────────────────────────────────────────────── #}
+        {% elif ev == 'game_ended' %}
+          {% if data.outcome == 'goal_reached' %}
+            <span style="font-size:1.1rem;">&#127881;</span>
+            <strong style="color:#155724;">Goal reached</strong>
+            {% if data.goal_message %}
+              &mdash; {{ data.goal_message }}
+            {% endif %}
+          {% else %}
+            <strong>Outcome:</strong> {{ data.outcome }}
+            {% if data.reason %}&mdash; {{ data.reason }}{% endif %}
+          {% endif %}
+          {% if data.step is not None %}<span class="op-meta"> at step {{ data.step }}</span>{% endif %}
+
+        {# ── game_paused ───────────────────────────────────────────────── #}
+        {% elif ev == 'game_paused' %}
+          <span>&#9646;&#9646; Game paused</span>
+          {% if data.checkpoint_id %}
+            <span class="op-meta">&nbsp;&mdash;&nbsp;checkpoint {{ data.checkpoint_id }}</span>
+          {% endif %}
+
+        {# ── game_resumed ──────────────────────────────────────────────── #}
+        {% elif ev == 'game_resumed' %}
+          <span style="color:#155724;">&#9654; Game resumed</span>
+          {% if data.checkpoint_id %}
+            <span class="op-meta">&nbsp;&mdash;&nbsp;from checkpoint {{ data.checkpoint_id }}</span>
+          {% endif %}
+
+        {# ── player_joined ─────────────────────────────────────────────── #}
+        {% elif ev == 'player_joined' %}
+          <strong>{{ data.name }}</strong> joined
+          {% if data.role_num is not None %} as role {{ data.role_num }}{% endif %}
+
+        {# ── player_left ───────────────────────────────────────────────── #}
+        {% elif ev == 'player_left' %}
+          <strong>{{ data.name }}</strong> left
+
+        {# ── artifact events ───────────────────────────────────────────── #}
+        {% elif ev == 'artifact_created' or ev == 'artifact_saved' or ev == 'artifact_finalized' %}
+          <span>&#128196; <strong>{{ data.artifact_name|default:"artifact" }}</strong></span>
+          {% if ev == 'artifact_saved' %}&nbsp;&mdash;&nbsp;saved (v{{ data.version }}){% endif %}
+          {% if ev == 'artifact_finalized' %}&nbsp;&mdash;&nbsp;finalized (v{{ data.final_version }}){% endif %}
+          {% if data.artifact_path %}
+            <span class="op-meta">&nbsp;&mdash;&nbsp;{{ data.artifact_path }}</span>
+          {% endif %}
+
+        {# ── parse_error ───────────────────────────────────────────────── #}
+        {% elif ev == 'parse_error' %}
+          <span style="color:#721c24;">Could not parse line:</span>
+          <pre style="margin-top:.2rem; font-size:.75rem;">{{ data.raw }}</pre>
+
+        {# ── any other event type (generic display) ────────────────────── #}
+        {% else %}
+          {% if entry.state_json %}
+          <details class="state-details">
+            <summary>Data</summary>
+            <pre>{{ entry.state_json }}</pre>
+          </details>
+          {% endif %}
+        {% endif %}
+
+      </div>{# end frame-body #}
+    </div>{# end frame #}
+    {% endwith %}
+    {% empty %}
+      <p style="color:#888;">No log frames on this page.</p>
+    {% endfor %}
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="pagination">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-sm">&#8592; Prev</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}" class="btn btn-sm">Next &#8594;</a>
+      {% endif %}
+    </div>
+    {% endif %}
+
+  </div>{# end left panel #}
+
+  <!-- Right: artifact pane (placeholder — populated by R4) -->
+  <div class="artifact-pane">
+    <div class="card" id="artifact-pane" style="display:none;">
+      <h3 id="artifact-title">Artifact</h3>
+      <pre id="artifact-content"></pre>
+    </div>
+    <div class="card" style="font-size:.82rem; color:#666;">
+      <strong style="color:#3d0971;">Artifact Pane</strong><br>
+      When a play-through contains document artifacts, clicking an
+      artifact event will show the document content here.
+      <em>(Artifact support is implemented in milestone R4.)</em>
+    </div>
+  </div>
+
+</div>{# end log-wrap #}
+{% endif %}{# end log_error else #}
+
+{% endblock %}
