@@ -8,13 +8,15 @@ from .models import WSZUser
 class UserCreateForm(UserCreationForm):
     """Form for admins to create a new WSZ6 account."""
 
+    field_order = [
+        'username', 'password1', 'password2',
+        'first_name', 'last_name', 'email',
+        'user_type', 'game_access_level',
+    ]
+
     class Meta(UserCreationForm.Meta):
         model = WSZUser
-        fields = [
-            'username', 'password1', 'password2',
-            'first_name', 'last_name', 'email',
-            'user_type', 'game_access_level',
-        ]
+        fields = ['username', 'first_name', 'last_name', 'email', 'user_type', 'game_access_level']
 
 
 class UserEditForm(forms.ModelForm):
