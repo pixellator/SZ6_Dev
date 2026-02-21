@@ -12,7 +12,7 @@ from django.db.models import Q, Count
 from django.utils import timezone
 
 from wsz6_admin.accounts.models import WSZUser
-from wsz6_admin.accounts.forms import UserEditForm
+from wsz6_admin.accounts.forms import UserEditForm, UserCreateForm
 from wsz6_admin.games_catalog.models import Game
 from wsz6_admin.sessions_log.models import GameSession
 
@@ -75,6 +75,20 @@ def user_detail(request, pk):
         'form': form,
         'sessions': sessions,
     })
+
+
+@admin_required
+def user_create(request):
+    """Create a new WSZ6 user account."""
+    if request.method == 'POST':
+        form = UserCreateForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            messages.success(request, f"User '{user.username}' created.")
+            return redirect('dashboard:user_detail', pk=user.pk)
+    else:
+        form = UserCreateForm()
+    return render(request, 'dashboard/user_create.html', {'form': form})
 
 
 @admin_required
