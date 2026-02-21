@@ -41,19 +41,36 @@ from .models import ResearchAnnotation, ResearchAPIToken
 def _build_pt_annotations_data(researcher, session_key, playthrough_id):
     """Return a serialisable dict of all annotations for one play-through.
 
+    Includes session-level notes (playthrough_id IS NULL) so that every
+    per-PT download is fully self-contained.
+
     Structure:
         {
             "session_key": "...",
             "playthrough_id": "...",
             "researcher": "username",
             "exported_at": "<ISO>",
+            "session_annotations":     [{"annotation": "...", "created_at": "..."}],
             "playthrough_annotations": [{"annotation": "...", "created_at": "..."}],
             "frame_annotations": [{"log_frame_index": N, "annotation": "...", "created_at": "..."}]
         }
     """
     from django.utils import timezone
 
-    rows = list(
+    # Session-level notes (no playthrough_id).
+    sess_rows = list(
+        ResearchAnnotation.objects
+        .filter(
+            researcher=researcher,
+            session_key=session_key,
+            playthrough_id__isnull=True,
+        )
+        .order_by('created_at')
+        .values('annotation', 'created_at')
+    )
+
+    # Play-through-level and frame-level notes.
+    pt_rows = list(
         ResearchAnnotation.objects
         .filter(
             researcher=researcher,
@@ -63,21 +80,27 @@ def _build_pt_annotations_data(researcher, session_key, playthrough_id):
         .order_by('log_frame_index', 'created_at')
         .values('log_frame_index', 'annotation', 'created_at')
     )
+
     return {
         'session_key':    str(session_key),
         'playthrough_id': str(playthrough_id),
         'researcher':     researcher.username,
         'exported_at':    timezone.now().isoformat(),
+        'session_annotations': [
+            {'annotation': r['annotation'],
+             'created_at': r['created_at'].isoformat()}
+            for r in sess_rows
+        ],
         'playthrough_annotations': [
             {'annotation': r['annotation'],
              'created_at': r['created_at'].isoformat()}
-            for r in rows if r['log_frame_index'] is None
+            for r in pt_rows if r['log_frame_index'] is None
         ],
         'frame_annotations': [
             {'log_frame_index': r['log_frame_index'],
              'annotation':      r['annotation'],
              'created_at':      r['created_at'].isoformat()}
-            for r in rows if r['log_frame_index'] is not None
+            for r in pt_rows if r['log_frame_index'] is not None
         ],
     }
 
