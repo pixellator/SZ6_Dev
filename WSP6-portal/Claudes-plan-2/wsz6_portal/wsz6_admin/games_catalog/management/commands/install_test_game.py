@@ -178,6 +178,24 @@ GAME_DEFS = [
         'min_players': 1,
         'max_players': 1,
     },
+    {
+        'slug':        'occluedo',
+        'name':        'OCCLUEdo: An Occluded Game of Clue',
+        'pff_file':    'OCCLUEdo_SZ6.py',
+        'vis_file':    'OCCLUEdo_WSZ6_VIS.py',
+        'images_dir':  'OCCLUEdo_images',
+        'source_dir':  'Vis-Features-Dev/game_sources',
+        'brief_desc':  (
+            'A simplified online Clue/Cluedo for 2-6 players plus observers. '
+            'Players move between rooms, make suggestions about the murder, '
+            'and try to identify the murderer, weapon, and room before anyone else. '
+            'Secret cards are dealt at the start; players show cards to disprove '
+            "each other's suggestions. "
+            'Demonstrates Tier-1 SVG interaction with role-based multiplayer.'
+        ),
+        'min_players': 2,
+        'max_players': 7,
+    },
 ]
 
 

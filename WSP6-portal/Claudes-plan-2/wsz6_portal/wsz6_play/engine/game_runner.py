@@ -29,6 +29,7 @@ SZ5-bug prevention note:
 """
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Callable, Coroutine, List, Optional
 
@@ -224,12 +225,13 @@ class GameRunner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def build_state_payload(self) -> dict:
-        """Build a complete ``state_update`` payload for the current state.
+    def _build_base_payload(self) -> dict:
+        """Build a ``state_update`` payload without vis_html (synchronous).
 
-        Used by both ``_broadcast_state`` (group broadcast) and the
-        ``GameConsumer.connect`` handler (direct send to a new connection),
-        so that both paths include ``vis_html`` when a vis module is present.
+        Used by ``_broadcast_state`` to send an identical base payload to the
+        channel group.  Each consumer then calls ``render_vis_for_role()``
+        separately to add its own role-specific vis_html before forwarding to
+        the browser.
         """
         state    = self.current_state
         ops_info = self.get_ops_info(state)
@@ -237,18 +239,7 @@ class GameRunner:
             at_goal = state.is_goal()
         except Exception:
             at_goal = False
-
-        # Optional visualization.  Runs in a thread in case future vis files
-        # do I/O.  Any exception leaves vis_html=None → text fallback.
-        vis_html   = None
-        vis_module = getattr(self.formulation, 'vis_module', None)
-        if vis_module is not None and callable(getattr(vis_module, 'render_state', None)):
-            try:
-                vis_html = await asyncio.to_thread(vis_module.render_state, state)
-            except Exception:
-                logger.exception("vis_module.render_state() failed at step %s", self.step)
-
-        payload = {
+        return {
             'type':             'state_update',
             'step':             self.step,
             'state':            serialize_state(state),
@@ -258,10 +249,57 @@ class GameRunner:
             'operators':        ops_info,
             'current_role_num': getattr(state, 'current_role_num', 0),
         }
+
+    async def render_vis_for_role(self, state, role_num=None):
+        """Render vis_html for a specific viewing role.
+
+        Inspects the VIS module's ``render_state`` signature and passes only
+        the keyword arguments it declares, for backward compatibility:
+
+          - ``role_num``      — the viewing player's role (for private data)
+          - ``instance_data`` — the formulation's instance_data object, which
+                                carries per-game-instance constants (e.g. dealt
+                                hands, crime solution) that never change during
+                                a session but are re-computed on each new game
+                                (including rematches).
+
+        Returns None if no vis module is loaded or rendering fails.
+        """
+        vis_module = getattr(self.formulation, 'vis_module', None)
+        if vis_module is None or not callable(getattr(vis_module, 'render_state', None)):
+            return None
+        try:
+            sig    = inspect.signature(vis_module.render_state)
+            params = sig.parameters
+            kwargs = {}
+            if 'role_num' in params:
+                kwargs['role_num'] = role_num
+            if 'instance_data' in params:
+                kwargs['instance_data'] = getattr(self.formulation, 'instance_data', None)
+            return await asyncio.to_thread(vis_module.render_state, state, **kwargs)
+        except Exception:
+            logger.exception("render_vis_for_role() failed at step %s", self.step)
+            return None
+
+    async def build_state_payload(self, role_num=None) -> dict:
+        """Build a complete ``state_update`` payload for the current state.
+
+        Used by the ``GameConsumer.connect`` handler (direct send to a new
+        connection) so that the initial render includes role-specific vis_html.
+        Pass ``role_num`` to get a role-aware visualization; omit it for a
+        generic (non-role-filtered) render.
+        """
+        payload  = self._build_base_payload()
+        vis_html = await self.render_vis_for_role(self.current_state, role_num)
         if vis_html is not None:
             payload['vis_html'] = vis_html
         return payload
 
     async def _broadcast_state(self) -> None:
-        payload = await self.build_state_payload()
+        """Broadcast base state payload (no vis_html) to the channel group.
+
+        Each GameConsumer's state_update handler adds its own role-specific
+        vis_html before forwarding to the browser.
+        """
+        payload = self._build_base_payload()
         await self.broadcast(payload)

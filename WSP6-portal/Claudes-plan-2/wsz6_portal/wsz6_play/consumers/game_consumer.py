@@ -95,11 +95,11 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
 
         # Send the current game state directly to this player on connect.
-        # build_state_payload() calls vis_module.render_state() when present,
-        # ensuring the SVG is shown from the very first render (not just after
-        # the first move).
-        runner  = session['game_runner']
-        payload = await runner.build_state_payload()
+        # build_state_payload(role_num=…) renders role-specific vis_html so
+        # the SVG is correct from the very first render (not just after a move).
+        runner      = session['game_runner']
+        self.runner = runner  # cache for use in state_update
+        payload = await runner.build_state_payload(role_num=self.role_num)
         payload['operators']     = _filter_ops_for_role(payload['operators'], self.role_num)
         payload['your_role_num'] = self.role_num
         payload['is_owner']      = self.is_owner
@@ -350,7 +350,18 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
 
     async def state_update(self, event):
         filtered = _filter_ops_for_role(event.get('operators', []), self.role_num)
-        await self.send_json({**event, 'operators': filtered, 'your_role_num': self.role_num})
+        out = {**event, 'operators': filtered, 'your_role_num': self.role_num}
+
+        # Render role-specific vis_html; the broadcast payload has none.
+        vis_html = await self.runner.render_vis_for_role(
+            self.runner.current_state, self.role_num
+        )
+        if vis_html is not None:
+            out['vis_html'] = vis_html
+        else:
+            out.pop('vis_html', None)   # ensure no stale HTML reaches client
+
+        await self.send_json(out)
 
     async def transition_msg(self, event):
         await self.send_json(event)
