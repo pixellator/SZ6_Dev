@@ -50,6 +50,7 @@ class GameRunner:
         formulation,
         role_manager,
         broadcast_func: Callable[..., Coroutine],
+        game_slug: str = '',
     ):
         """
         Args:
@@ -58,10 +59,15 @@ class GameRunner:
             broadcast_func: ``async callable(payload: dict)`` that sends a
                             message to the entire Channel group for this
                             play-through.
+            game_slug:      The game's URL slug (e.g. ``'tic-tac-toe'``).
+                            Used to build the ``base_url`` passed to vis
+                            modules that declare a ``base_url`` parameter in
+                            their ``render_state`` signature.
         """
         self.formulation   = formulation
         self.role_manager  = role_manager
         self.broadcast     = broadcast_func
+        self.game_slug     = game_slug
         self.state_stack:  List[Any] = []
         self.op_history:   List[Optional[int]] = [None]  # op_index used at each step; None = initial
         self.current_state = None
@@ -276,6 +282,8 @@ class GameRunner:
                 kwargs['role_num'] = role_num
             if 'instance_data' in params:
                 kwargs['instance_data'] = getattr(self.formulation, 'instance_data', None)
+            if 'base_url' in params:
+                kwargs['base_url'] = f"/play/game-asset/{self.game_slug}/"
             return await asyncio.to_thread(vis_module.render_state, state, **kwargs)
         except Exception:
             logger.exception("render_vis_for_role() failed at step %s", self.step)

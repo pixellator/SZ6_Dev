@@ -32,6 +32,7 @@ WebSocket URL:  ws://<host>/ws/lobby/<session_key>/
 
 import asyncio
 import logging
+import os
 import uuid
 
 from channels.db import database_sync_to_async
@@ -42,7 +43,7 @@ from django.conf import settings
 from wsz6_play import session_store
 from wsz6_play.engine.bot_player import BotPlayer
 from wsz6_play.engine.game_runner import GameRunner
-from wsz6_play.engine.pff_loader import PFFLoadError, load_formulation
+from wsz6_play.engine.pff_loader import PFFLoadError, load_formulation, load_vis_module
 from wsz6_play.engine.role_manager import PlayerInfo, RoleManager
 from wsz6_play.persistence.checkpoint import load_checkpoint
 from wsz6_play.persistence.gdm_writer import (
@@ -319,13 +320,21 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             return
 
         # Load a fresh formulation (unique module name per play-through).
+        game_slug = session['game_slug']
         try:
             formulation = await asyncio.to_thread(
-                load_formulation, session['game_slug'], settings.GAMES_REPO_ROOT
+                load_formulation, game_slug, settings.GAMES_REPO_ROOT
             )
         except PFFLoadError as exc:
             await self.send_json({'type': 'error', 'message': f'Failed to load game: {exc}'})
             return
+
+        # Auto-discover a vis module if the PFF did not explicitly set one.
+        if getattr(formulation, 'vis_module', None) is None:
+            game_dir = os.path.join(settings.GAMES_REPO_ROOT, game_slug)
+            vis_mod  = await asyncio.to_thread(load_vis_module, game_dir)
+            if vis_mod is not None:
+                formulation.vis_module = vis_mod
 
         # Set up GDM directories and writer.
         playthrough_id = uuid.uuid4().hex
@@ -344,7 +353,7 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
 
         # Build the broadcast function for GameRunner.
         runner, bots = self._make_runner_and_bots(
-            formulation, rm, self.session_key
+            formulation, rm, self.session_key, game_slug=game_slug
         )
 
         # Persist to session store before starting the runner.
@@ -406,13 +415,21 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
         rm             = session['role_manager']
 
         # Load a fresh formulation for the runner.
+        game_slug = session['game_slug']
         try:
             formulation = await asyncio.to_thread(
-                load_formulation, session['game_slug'], settings.GAMES_REPO_ROOT
+                load_formulation, game_slug, settings.GAMES_REPO_ROOT
             )
         except PFFLoadError as exc:
             await self.send_json({'type': 'error', 'message': f'Failed to load game: {exc}'})
             return
+
+        # Auto-discover a vis module if the PFF did not explicitly set one.
+        if getattr(formulation, 'vis_module', None) is None:
+            game_dir = os.path.join(settings.GAMES_REPO_ROOT, game_slug)
+            vis_mod  = await asyncio.to_thread(load_vis_module, game_dir)
+            if vis_mod is not None:
+                formulation.vis_module = vis_mod
 
         # Restore state from checkpoint.
         try:
@@ -424,7 +441,7 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
 
         # Build a new runner with the restored state.
         runner, bots = self._make_runner_and_bots(
-            formulation, rm, self.session_key
+            formulation, rm, self.session_key, game_slug=game_slug
         )
         runner.state_stack  = [state]
         runner.current_state = state
@@ -487,7 +504,7 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
             return False
         return user.id == session.get('owner_id')
 
-    def _make_runner_and_bots(self, formulation, rm, session_key) -> tuple:
+    def _make_runner_and_bots(self, formulation, rm, session_key, game_slug='') -> tuple:
         """Create a GameRunner and collect BotPlayer instances from the RM."""
         game_group    = f"game_{session_key}"
         channel_layer = get_channel_layer()
@@ -495,7 +512,7 @@ class LobbyConsumer(AsyncJsonWebsocketConsumer):
         async def broadcast(payload: dict):
             await channel_layer.group_send(game_group, payload)
 
-        runner = GameRunner(formulation, rm, broadcast)
+        runner = GameRunner(formulation, rm, broadcast, game_slug=game_slug)
 
         bots = [
             BotPlayer(role_num=p.role_num, strategy=p.strategy)

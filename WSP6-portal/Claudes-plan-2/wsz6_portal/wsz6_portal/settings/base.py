@@ -28,6 +28,14 @@ GDM_ROOT = config(
     default=str(BASE_DIR.parent.parent.parent / 'gdm')
 )
 
+# Directory containing the shared SOLUZION6 base library (soluzion6_02.py).
+# Added to sys.path by pff_loader so PFFs can `from soluzion6_02 import ...`
+# without a per-game copy of the file in each game directory.
+SOLUZION_LIB_DIR = config(
+    'SOLUZION_LIB_DIR',
+    default=str(BASE_DIR.parent.parent.parent / 'Textual_SZ6')
+)
+
 # ---------------------------------------------------------------------------
 # Security
 # ---------------------------------------------------------------------------
