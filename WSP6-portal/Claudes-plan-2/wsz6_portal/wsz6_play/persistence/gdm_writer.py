@@ -14,6 +14,9 @@ Supported event types (write_event is generic; these are conventions):
     game_ended          — outcome, goal_message/reason, step
     player_joined       — name, role_num
     player_left         — name
+    artifact_created    — artifact_name, artifact_path, version
+    artifact_saved      — artifact_name, artifact_path, version
+    artifact_finalized  — artifact_name, artifact_path, final_version
 
 GDM directory layout:
     <gdm_root>/
@@ -25,12 +28,17 @@ GDM directory layout:
                 log.jsonl
                 checkpoints/
                 artifacts/
+                    <name>.txt          ← current (latest) version
+                    <name>.v1.txt       ← first explicit save
+                    <name>.v2.txt       ← second explicit save
+                    ...
 """
 
 import asyncio
 import json
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +69,7 @@ class GDMWriter:
     """Async-safe append-only JSONL writer for one play-through."""
 
     def __init__(self, playthrough_dir: str):
+        self.playthrough_dir = playthrough_dir
         self.log_path = os.path.join(playthrough_dir, 'log.jsonl')
         self._lock = asyncio.Lock()
 
@@ -84,3 +93,56 @@ class GDMWriter:
     def _append(self, line: str) -> None:
         with open(self.log_path, 'a', encoding='utf-8') as f:
             f.write(line)
+
+    # -----------------------------------------------------------------------
+    # Artifact support (R4)
+    # -----------------------------------------------------------------------
+
+    async def write_artifact(
+        self,
+        artifact_name: str,
+        content: str,
+        version: int,
+    ) -> str:
+        """Write artifact content to a versioned file in artifacts/.
+
+        Writes two files:
+          - ``<name>.v<N>.txt``  — the versioned snapshot (immutable reference)
+          - ``<name>.txt``       — the current (latest) copy (overwritten each time)
+
+        Returns the relative path of the versioned file (e.g. ``artifacts/essay.v2.txt``).
+        """
+        artifacts_dir = os.path.join(self.playthrough_dir, 'artifacts')
+        versioned_name = f"{artifact_name}.v{version}.txt"
+        versioned_path = os.path.join(artifacts_dir, versioned_name)
+        current_path   = os.path.join(artifacts_dir, f"{artifact_name}.txt")
+        await asyncio.to_thread(self._write_text, versioned_path, content)
+        await asyncio.to_thread(self._write_text, current_path, content)
+        return os.path.join('artifacts', versioned_name)
+
+    async def write_artifact_event(
+        self,
+        event_type: str,
+        artifact_name: str,
+        artifact_path: str,
+        version: int,
+    ) -> None:
+        """Log an artifact event to the JSONL log.
+
+        ``event_type`` should be one of:
+            ``artifact_created``, ``artifact_saved``, ``artifact_finalized``
+        ``artifact_path`` is the relative path returned by ``write_artifact()``.
+        """
+        extra = {
+            'artifact_name': artifact_name,
+            'artifact_path': artifact_path,
+        }
+        if event_type == 'artifact_finalized':
+            extra['final_version'] = version
+        else:
+            extra['version'] = version
+        await self.write_event(event_type, **extra)
+
+    def _write_text(self, path: str, content: str) -> None:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(content)

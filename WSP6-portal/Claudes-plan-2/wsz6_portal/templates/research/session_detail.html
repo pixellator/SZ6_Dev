@@ -110,7 +110,9 @@
           <a href="{% url 'research:log_viewer' session.session_key pt.playthrough_id %}"
              class="btn btn-sm btn-primary">View Log</a>
           <a href="{% url 'research:export_jsonl' session.session_key pt.playthrough_id %}"
-             class="btn btn-sm">Export JSONL</a>
+             class="btn btn-sm">JSONL</a>
+          <a href="{% url 'research:export_zip' session.session_key pt.playthrough_id %}"
+             class="btn btn-sm">ZIP</a>
         </td>
       </tr>
       {% endfor %}
@@ -118,6 +120,16 @@
   </table>
   {% else %}
   <p style="color:#888;">No play-throughs recorded for this session.</p>
+  {% endif %}
+
+  {% if playthroughs %}
+  <div style="margin-top:.8rem; padding-top:.8rem; border-top:1px solid #eee;">
+    <a href="{% url 'research:export_session_zip' session.session_key %}"
+       class="btn btn-sm">&#8595; Export Entire Session (ZIP)</a>
+    <span style="font-size:.78rem; color:#888; margin-left:.5rem;">
+      Includes all play-throughs: logs, artifacts, and checkpoints.
+    </span>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

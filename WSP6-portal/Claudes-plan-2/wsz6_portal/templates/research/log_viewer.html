@@ -61,11 +61,16 @@
   /* ── Artifact pane ────────────────────────────────────────────── */
   .artifact-pane { position: sticky; top: 1rem; }
   .artifact-pane .card { background: #fdf6ff; border: 1px solid #d0b0e8; }
-  .artifact-pane h3 { color: #3d0971; }
+  .artifact-pane h3 { color: #3d0971; margin-bottom: .5rem; }
   .artifact-pane pre { font-size: .78rem; white-space: pre-wrap; word-break: break-word;
                         max-height: 500px; overflow: auto; background: #fff;
                         border: 1px solid #e0d0f0; padding: .6rem; border-radius: 4px; }
-  .artifact-link { cursor: pointer; font-size: .8rem; color: #6f42c1; text-decoration: underline; }
+  .artifact-loading { color: #6f42c1; font-style: italic; font-size: .82rem; }
+  .artifact-err     { color: #721c24; font-size: .82rem; }
+  .btn-artifact { font-size: .75rem; padding: .15rem .5rem; background: #e2d9f3;
+                  color: #3d0971; border: 1px solid #c5aee8; border-radius: 3px;
+                  cursor: pointer; text-decoration: none; display: inline-block;
+                  margin-left: .4rem; vertical-align: middle; }
 
   /* ── Pagination ───────────────────────────────────────────────── */
   .pagination { display: flex; gap: .4rem; align-items: center; margin-top: 1rem; font-size: .9rem; }
@@ -235,6 +240,12 @@
           {% if data.artifact_path %}
             <span class="op-meta">&nbsp;&mdash;&nbsp;{{ data.artifact_path }}</span>
           {% endif %}
+          {% if entry.artifact_name_safe %}
+            <button class="btn-artifact"
+                    onclick="loadArtifact('{{ entry.artifact_name_safe }}', '{{ entry.artifact_version|default:'' }}')">
+              &#128065; View
+            </button>
+          {% endif %}
 
         {# ── parse_error ───────────────────────────────────────────────── #}
         {% elif ev == 'parse_error' %}
@@ -273,21 +284,74 @@
 
   </div>{# end left panel #}
 
-  <!-- Right: artifact pane (placeholder — populated by R4) -->
+  <!-- Right: artifact pane -->
   <div class="artifact-pane">
     <div class="card" id="artifact-pane" style="display:none;">
-      <h3 id="artifact-title">Artifact</h3>
+      <div style="display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;">
+        <h3 id="artifact-title" style="margin:0; flex:1;">Artifact</h3>
+        <a id="artifact-full-link" href="#" class="btn btn-sm" target="_blank"
+           style="font-size:.75rem;">Full view &#8599;</a>
+        <button onclick="document.getElementById('artifact-pane').style.display='none';"
+                style="background:none; border:none; cursor:pointer; color:#888; font-size:1rem;">&#10005;</button>
+      </div>
+      <p id="artifact-loading" class="artifact-loading" style="display:none;">Loading…</p>
+      <p id="artifact-err"     class="artifact-err"     style="display:none;"></p>
       <pre id="artifact-content"></pre>
     </div>
     <div class="card" style="font-size:.82rem; color:#666;">
-      <strong style="color:#3d0971;">Artifact Pane</strong><br>
-      When a play-through contains document artifacts, clicking an
-      artifact event will show the document content here.
-      <em>(Artifact support is implemented in milestone R4.)</em>
+      <strong style="color:#3d0971;">&#128196; Artifact Pane</strong><br>
+      Click <em>&#128065; View</em> on any artifact event to display
+      the document content here.
     </div>
   </div>
 
 </div>{# end log-wrap #}
 {% endif %}{# end log_error else #}
 
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+  var SK  = '{{ session.session_key }}';
+  var PTI = '{{ pt.playthrough_id }}';
+
+  window.loadArtifact = function(name, version) {
+    var pane     = document.getElementById('artifact-pane');
+    var title    = document.getElementById('artifact-title');
+    var content  = document.getElementById('artifact-content');
+    var loading  = document.getElementById('artifact-loading');
+    var errEl    = document.getElementById('artifact-err');
+    var fullLink = document.getElementById('artifact-full-link');
+
+    pane.style.display    = 'block';
+    loading.style.display = 'block';
+    content.textContent   = '';
+    errEl.style.display   = 'none';
+    title.textContent     = name + (version ? ' (v' + version + ')' : ' (latest)');
+
+    var url = '/research/sessions/' + SK + '/' + PTI + '/artifact/' + encodeURIComponent(name) + '/?format=json';
+    if (version) url += '&version=' + encodeURIComponent(version);
+
+    var fullUrl = '/research/sessions/' + SK + '/' + PTI + '/artifact/' + encodeURIComponent(name) + '/';
+    if (version) fullUrl += '?version=' + encodeURIComponent(version);
+    fullLink.href = fullUrl;
+
+    fetch(url, {credentials: 'same-origin'})
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        loading.style.display = 'none';
+        content.textContent   = data.content;
+      })
+      .catch(function(e) {
+        loading.style.display = 'none';
+        errEl.style.display   = 'block';
+        errEl.textContent     = 'Could not load artifact: ' + e.message;
+      });
+  };
+})();
+</script>
 {% endblock %}
