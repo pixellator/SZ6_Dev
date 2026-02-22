@@ -1448,12 +1448,29 @@ capacity. Apply these steps in order:
 
 ### 10.7 Game Source Tree Consolidation
 
-Currently, game source files live in two locations:
-- `Textual_SZ6/` — original textual games
-- `Vis-Features-Dev/game_sources/` — newer web games
+This consolidation was performed as part of the Games File System Refactoring
+(documented in `Games_File_System_Refactoring.md`). The following changes were
+made:
 
-And `soluzion6_02.py` is copied into each installed game's directory, creating
-10+ redundant copies. The recommended consolidation:
+- **`SZ6_Dev/game_sources/`** was created as the single canonical home for all
+  authored game files. Games that previously lived in `Textual_SZ6/` or
+  `Vis-Features-Dev/game_sources/` were copied into per-game subdirectories here
+  (e.g. `game_sources/tic_tac_toe/`, `game_sources/occluedo/`, etc.).
+
+- **`soluzion6_02.py`** is no longer bundled into each installed game directory.
+  Instead, `pff_loader.py` adds the `SOLUZION_LIB_DIR` setting (defaulting to
+  `Textual_SZ6/`) to `sys.path`, so all PFFs import from the single source of
+  truth.
+
+- **`tic-tac-toe-vis`** was removed as a separate catalog entry. The vis module
+  (`Tic_Tac_Toe_WSZ6_VIS.py`) is now co-located with the PFF in the `tic-tac-toe`
+  game directory and auto-discovered by the loader at runtime.
+
+- **`metadata.json`** is written into each installed game directory by
+  `install_test_game` to record the slug, name, PFF file, vis file, player
+  counts, and install timestamp.
+
+The resulting layout is:
 
 ```
 SZ6_Dev/
@@ -1464,12 +1481,17 @@ SZ6_Dev/
     ...
   Textual_SZ6/           ← textual engine only
     Textual_SOLUZION6.py
-    soluzion6_02.py      ← single source of truth
-  games_repo/            ← installed copies (runtime, git-ignored)
+    soluzion6_02.py      ← single source of truth (on sys.path via SOLUZION_LIB_DIR)
+  games_repo/            ← installed runtime copies (git-ignored)
+    tic-tac-toe/
+      Tic_Tac_Toe_SZ6.py
+      Tic_Tac_Toe_WSZ6_VIS.py
+      metadata.json
+    missionaries/
+      Missionaries_SZ6.py
+      metadata.json
+    ...                  ← no soluzion6_02.py copies; no tic-tac-toe-vis directory
 ```
-
-The PFF loader should add `SOLUZION_LIB_DIR` to `sys.path` and serve
-`soluzion6_02.py` from a shared location rather than bundling it per game.
 
 ---
 
